@@ -1,0 +1,5 @@
+{
+  "name": "MangaLens Translator",
+  "description": "AI-powered Manga/Manhwa translator that extracts and translates text from images using specific scanlation formatting rules.",
+  "requestFramePermissions": []
+}
