@@ -12,18 +12,15 @@ const translationSchema: Schema = {
     },
     translated: {
       type: Type.STRING,
-      description: "The English translation formatted with the specific symbols requested.",
+      description: "The translated text formatted with the specific symbols requested.",
     },
   },
   required: ["extracted", "translated"],
 };
 
-export const translateMangaPage = async (base64Image: string, mimeType: string) => {
+export const translateMangaPage = async (base64Image: string, mimeType: string, targetLanguage: string, useSymbols: boolean) => {
   try {
-    const systemPrompt = `
-    You are a professional Manga/Manhwa translator and typesetter assistant. 
-    Your task is to analyze the provided image (Manga/Manhwa page), extract the text in its original language, and translate it into English.
-
+    const symbolRules = `
     CRITICAL FORMATTING RULES FOR TRANSLATION:
     You must use the exact symbols below as PREFIXES. 
     DO NOT wrap the text with the symbol. 
@@ -63,6 +60,21 @@ export const translateMangaPage = async (base64Image: string, mimeType: string) 
        - Example:
          "": Wait a minute,
          //: did you just say that?
+    `;
+
+    const plainRules = `
+    FORMATTING RULES:
+    - Do NOT use specific prefixes like "":, ():, [], etc.
+    - Just provide the translated text.
+    `;
+
+    const formattingInstruction = useSymbols ? symbolRules : plainRules;
+
+    const systemPrompt = `
+    You are a professional Manga/Manhwa translator and typesetter assistant. 
+    Your task is to analyze the provided image (Manga/Manhwa page), extract the text in its original language, and translate it into ${targetLanguage}.
+
+    ${formattingInstruction}
     
     CRITICAL TEXT PROCESSING RULES:
     1. SINGLE LINE PER BUBBLE: If the text inside a SINGLE bubble is split into multiple lines in the image, you MUST join them into a single line in the output.
@@ -74,7 +86,7 @@ export const translateMangaPage = async (base64Image: string, mimeType: string) 
     OUTPUT REQUIREMENT:
     - Return a JSON object.
     - 'extracted': The raw text in the source language.
-    - 'translated': The English text applying the strict prefix rules above.
+    - 'translated': The ${targetLanguage} translation applying the formatting rules above.
     `;
 
     const response = await ai.models.generateContent({
@@ -94,7 +106,7 @@ export const translateMangaPage = async (base64Image: string, mimeType: string) 
             },
           },
           {
-            text: "Extract and translate. Ensure NO newlines inside a single bubble text. Use strict prefix formatting.",
+            text: `Extract and translate to ${targetLanguage}. Ensure NO newlines inside a single bubble text. Use strict formatting rules.`,
           },
         ],
       },

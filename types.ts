@@ -7,7 +7,7 @@ export interface UploadedImage {
   id: string;
   file: File;
   previewUrl: string;
-  status: 'idle' | 'uploading' | 'processing' | 'success' | 'error';
+  status: 'idle' | 'uploading' | 'processing' | 'success' | 'error' | 'queued';
   result?: TranslationResult;
   error?: string;
 }
@@ -15,4 +15,14 @@ export interface UploadedImage {
 export interface ThemeContextType {
   isDark: boolean;
   toggleTheme: () => void;
+}
+
+export type TargetLanguage = 'English' | 'Arabic' | 'French' | 'German';
+export type AppLanguage = 'en' | 'ar';
+
+export interface LanguageContextType {
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
+  t: (key: string) => string;
+  dir: 'ltr' | 'rtl';
 }

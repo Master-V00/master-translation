@@ -2,9 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Placeholder favicon, user should replace logo.png in public folder -->
+    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MangaLens Translator</title>
+    <title>MASTER TRANSLATOR</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -26,8 +27,13 @@
     </script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+      
       body {
         font-family: 'Inter', sans-serif;
+      }
+      body[dir="rtl"] {
+        font-family: 'Cairo', sans-serif;
       }
       /* Custom scrollbar for text areas */
       .custom-scrollbar::-webkit-scrollbar {

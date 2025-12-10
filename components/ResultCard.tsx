@@ -1,12 +1,13 @@
 import React from 'react';
 import { UploadedImage } from '../types';
-import { Loader2, AlertCircle, Copy, Check } from 'lucide-react';
+import { Loader2, AlertCircle, Copy, Check, RotateCcw, Clock } from 'lucide-react';
 
 interface ResultCardProps {
   item: UploadedImage;
+  onRetranslate?: () => void;
 }
 
-export const ResultCard: React.FC<ResultCardProps> = ({ item }) => {
+export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) => {
   const [copiedRaw, setCopiedRaw] = React.useState(false);
   const [copiedTrans, setCopiedTrans] = React.useState(false);
 
@@ -47,6 +48,12 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item }) => {
               {item.file.name}
             </h3>
             <div className="flex items-center space-x-2">
+              {item.status === 'queued' && (
+                <span className="flex items-center text-amber-600 dark:text-amber-400 text-sm font-medium bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-full">
+                  <Clock className="mr-2 h-4 w-4 animate-pulse" />
+                  Queued
+                </span>
+              )}
               {item.status === 'processing' && (
                 <span className="flex items-center text-brand-600 dark:text-brand-400 text-sm font-medium bg-brand-50 dark:bg-brand-900/30 px-3 py-1 rounded-full">
                   <Loader2 className="animate-spin mr-2 h-4 w-4" />
@@ -60,17 +67,27 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item }) => {
                 </span>
               )}
               {item.status === 'success' && (
-                <span className="flex items-center text-green-600 dark:text-green-400 text-sm font-medium bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full">
-                  <Check className="mr-2 h-4 w-4" />
-                  Done
-                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={onRetranslate}
+                    className="flex items-center text-gray-600 dark:text-gray-300 text-xs font-medium bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-full hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                    title="Retranslate this page (Priority)"
+                  >
+                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    Retranslate
+                  </button>
+                  <span className="flex items-center text-green-600 dark:text-green-400 text-sm font-medium bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full">
+                    <Check className="mr-2 h-4 w-4" />
+                    Done
+                  </span>
+                </div>
               )}
             </div>
           </div>
 
           {/* Results Grid */}
-          {item.status === 'success' && item.result && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+          {(item.status === 'success' || (item.status === 'queued' && item.result)) && item.result ? (
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 h-full ${item.status === 'queued' ? 'opacity-50 grayscale' : ''}`}>
               
               {/* Extracted Text Column */}
               <div className="flex flex-col h-full min-h-[300px]">
@@ -117,11 +134,18 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item }) => {
               </div>
 
             </div>
-          )}
+          ) : null}
 
           {item.status === 'error' && (
-            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm">
-              {item.error || "An unknown error occurred during translation."}
+            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-center justify-between">
+              <span>{item.error || "An unknown error occurred during translation."}</span>
+              <button 
+                onClick={onRetranslate}
+                className="ml-4 flex items-center space-x-1 text-xs bg-white dark:bg-slate-800 border border-red-200 dark:border-red-800 px-3 py-1 rounded shadow-sm hover:bg-red-50 dark:hover:bg-red-900/30"
+              >
+                <RotateCcw size={12} />
+                <span>Retry</span>
+              </button>
             </div>
           )}
           
@@ -132,6 +156,13 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item }) => {
               </div>
               <p className="text-sm animate-pulse">Analyzing visuals and translating...</p>
             </div>
+          )}
+          
+          {item.status === 'queued' && !item.result && (
+             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 space-y-4">
+               <Clock size={48} className="text-amber-300 dark:text-amber-800/50 opacity-50" />
+               <p className="text-sm">Queued for translation...</p>
+             </div>
           )}
 
         </div>
