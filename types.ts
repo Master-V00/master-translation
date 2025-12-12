@@ -7,9 +7,10 @@ export interface UploadedImage {
   id: string;
   file: File;
   previewUrl: string;
-  status: 'idle' | 'uploading' | 'processing' | 'success' | 'error' | 'queued';
+  status: 'idle' | 'uploading' | 'processing' | 'success' | 'error' | 'queued' | 'waiting';
   result?: TranslationResult;
   error?: string;
+  cooldownEndsAt?: number;
 }
 
 export interface ThemeContextType {

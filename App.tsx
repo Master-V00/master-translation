@@ -21,6 +21,7 @@ const AppContent: React.FC = () => {
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
+  const requestTimestampsRef = useRef<number[]>([]);
 
   // Keep imagesRef in sync with state for the async processor
   useEffect(() => {
@@ -33,8 +34,37 @@ const AppContent: React.FC = () => {
     setIsQueueRunning(true);
 
     while (queueRef.current.length > 0) {
+      // RATE LIMIT LOGIC: Max 5 requests per minute
+      const now = Date.now();
+      // Keep only timestamps within the last 60 seconds
+      requestTimestampsRef.current = requestTimestampsRef.current.filter(t => now - t < 60000);
+
+      if (requestTimestampsRef.current.length >= 5) {
+        // Find the oldest request in the current window
+        const oldestRequestTime = requestTimestampsRef.current[0];
+        const timeSinceOldest = now - oldestRequestTime;
+        const waitTime = 60000 - timeSinceOldest + 1000; // Add 1s buffer
+
+        if (waitTime > 0) {
+          const nextId = queueRef.current[0]; // Peek at next image ID
+          
+          // Set status to waiting with cooldown
+          setImages((prev) => 
+            prev.map((img) => img.id === nextId ? { ...img, status: 'waiting', cooldownEndsAt: now + waitTime } : img)
+          );
+
+          // Wait for the cooldown
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          
+          // After waiting, loop continues and re-evaluates
+          continue; 
+        }
+      }
+
       const nextId = queueRef.current.shift();
       if (nextId) {
+        // Record timestamp of this new request
+        requestTimestampsRef.current.push(Date.now());
         await processImage(nextId);
       }
     }
@@ -47,9 +77,9 @@ const AppContent: React.FC = () => {
     const imageToProcess = imagesRef.current.find((img) => img.id === id);
     if (!imageToProcess) return;
 
-    // Update status to processing
+    // Update status to processing (clearing any waiting status)
     setImages((prev) =>
-      prev.map((img) => (img.id === id ? { ...img, status: 'processing', error: undefined } : img))
+      prev.map((img) => (img.id === id ? { ...img, status: 'processing', error: undefined, cooldownEndsAt: undefined } : img))
     );
 
     try {

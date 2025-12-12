@@ -1,15 +1,32 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { UploadedImage } from '../types';
-import { Loader2, AlertCircle, Copy, Check, RotateCcw, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, Copy, Check, RotateCcw, Clock, Hourglass } from 'lucide-react';
+import { useLanguage } from './LanguageContext';
 
 interface ResultCardProps {
   item: UploadedImage;
   onRetranslate?: () => void;
 }
 
+const CountdownTimer: React.FC<{ targetDate: number }> = ({ targetDate }) => {
+  const [timeLeft, setTimeLeft] = useState(Math.max(0, Math.ceil((targetDate - Date.now()) / 1000)));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+        const newTime = Math.max(0, Math.ceil((targetDate - Date.now()) / 1000));
+        setTimeLeft(newTime);
+        if (newTime <= 0) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [targetDate]);
+
+  return <span>{timeLeft}s</span>;
+};
+
 export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) => {
-  const [copiedRaw, setCopiedRaw] = React.useState(false);
-  const [copiedTrans, setCopiedTrans] = React.useState(false);
+  const { t } = useLanguage();
+  const [copiedRaw, setCopiedRaw] = useState(false);
+  const [copiedTrans, setCopiedTrans] = useState(false);
 
   const copyToClipboard = async (text: string, isTrans: boolean) => {
     try {
@@ -51,19 +68,25 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
               {item.status === 'queued' && (
                 <span className="flex items-center text-amber-600 dark:text-amber-400 text-sm font-medium bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-full">
                   <Clock className="mr-2 h-4 w-4 animate-pulse" />
-                  Queued
+                  {t('queued')}
+                </span>
+              )}
+              {item.status === 'waiting' && (
+                <span className="flex items-center text-orange-600 dark:text-orange-400 text-sm font-medium bg-orange-50 dark:bg-orange-900/30 px-3 py-1 rounded-full">
+                  <Hourglass className="mr-2 h-4 w-4 animate-spin-slow" />
+                  {t('waitingCooldown')} {item.cooldownEndsAt && <span className="ml-1 font-bold"><CountdownTimer targetDate={item.cooldownEndsAt} /></span>}
                 </span>
               )}
               {item.status === 'processing' && (
                 <span className="flex items-center text-brand-600 dark:text-brand-400 text-sm font-medium bg-brand-50 dark:bg-brand-900/30 px-3 py-1 rounded-full">
                   <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Translating...
+                  {t('processing')}
                 </span>
               )}
               {item.status === 'error' && (
                 <span className="flex items-center text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/30 px-3 py-1 rounded-full">
                   <AlertCircle className="mr-2 h-4 w-4" />
-                  Error
+                  {t('error')}
                 </span>
               )}
               {item.status === 'success' && (
@@ -71,14 +94,14 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
                   <button
                     onClick={onRetranslate}
                     className="flex items-center text-gray-600 dark:text-gray-300 text-xs font-medium bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-full hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
-                    title="Retranslate this page (Priority)"
+                    title={t('retranslate')}
                   >
                     <RotateCcw className="mr-1.5 h-3 w-3" />
-                    Retranslate
+                    {t('retranslate')}
                   </button>
                   <span className="flex items-center text-green-600 dark:text-green-400 text-sm font-medium bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full">
                     <Check className="mr-2 h-4 w-4" />
-                    Done
+                    {t('done')}
                   </span>
                 </div>
               )}
@@ -86,14 +109,14 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
           </div>
 
           {/* Results Grid */}
-          {(item.status === 'success' || (item.status === 'queued' && item.result)) && item.result ? (
-            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 h-full ${item.status === 'queued' ? 'opacity-50 grayscale' : ''}`}>
+          {((item.status === 'success' || item.status === 'queued' || item.status === 'waiting') && item.result) ? (
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 h-full ${item.status !== 'success' ? 'opacity-50 grayscale' : ''}`}>
               
               {/* Extracted Text Column */}
               <div className="flex flex-col h-full min-h-[300px]">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Extracted Text
+                    {t('extracted')}
                   </span>
                   <button 
                     onClick={() => copyToClipboard(item.result!.extracted, false)}
@@ -115,7 +138,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
               <div className="flex flex-col h-full min-h-[300px]">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-brand-600 dark:text-brand-400 uppercase tracking-wider">
-                    English Translation
+                    {t('translated')}
                   </span>
                   <button 
                     onClick={() => copyToClipboard(item.result!.translated, true)}
@@ -138,13 +161,13 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
 
           {item.status === 'error' && (
             <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-center justify-between">
-              <span>{item.error || "An unknown error occurred during translation."}</span>
+              <span>{item.error || t('unknownError')}</span>
               <button 
                 onClick={onRetranslate}
                 className="ml-4 flex items-center space-x-1 text-xs bg-white dark:bg-slate-800 border border-red-200 dark:border-red-800 px-3 py-1 rounded shadow-sm hover:bg-red-50 dark:hover:bg-red-900/30"
               >
                 <RotateCcw size={12} />
-                <span>Retry</span>
+                <span>{t('retry')}</span>
               </button>
             </div>
           )}
@@ -154,14 +177,28 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
               <div className="w-full max-w-md bg-gray-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
                 <div className="bg-brand-500 h-1.5 rounded-full animate-[loading_1.5s_ease-in-out_infinite] w-1/2"></div>
               </div>
-              <p className="text-sm animate-pulse">Analyzing visuals and translating...</p>
+              <p className="text-sm animate-pulse">{t('analyzing')}</p>
             </div>
           )}
           
-          {item.status === 'queued' && !item.result && (
+          {(item.status === 'queued' || item.status === 'waiting') && !item.result && (
              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 space-y-4">
-               <Clock size={48} className="text-amber-300 dark:text-amber-800/50 opacity-50" />
-               <p className="text-sm">Queued for translation...</p>
+               {item.status === 'waiting' ? (
+                 <>
+                   <Hourglass size={48} className="text-orange-300 dark:text-orange-800/50 opacity-50 animate-pulse" />
+                   <div className="text-center">
+                     <p className="text-sm font-medium text-orange-500 dark:text-orange-400">{t('waitingCooldown')}</p>
+                     {item.cooldownEndsAt && (
+                       <p className="text-xs mt-1 text-gray-400"><CountdownTimer targetDate={item.cooldownEndsAt} /></p>
+                     )}
+                   </div>
+                 </>
+               ) : (
+                 <>
+                   <Clock size={48} className="text-amber-300 dark:text-amber-800/50 opacity-50" />
+                   <p className="text-sm">Queued for translation...</p>
+                 </>
+               )}
              </div>
           )}
 
