@@ -27,3 +27,15 @@ export interface LanguageContextType {
   t: (key: string) => string;
   dir: 'ltr' | 'rtl';
 }
+
+export type ViewType = 'home' | 'profile' | 'store' | 'payment';
+
+export interface StoreProduct {
+  id: string;
+  type: 'subscription' | 'pack';
+  nameKey: string;
+  price: string;
+  durationKey?: string; // For subscriptions
+  credits?: number;     // For packs
+  features: string[];
+}
