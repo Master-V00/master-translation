@@ -7,13 +7,15 @@ import { HomeView } from './components/HomeView';
 import { ProfileView } from './components/ProfileView';
 import { StoreView } from './components/StoreView';
 import { PaymentView } from './components/PaymentView';
-import { ViewType, StoreProduct } from './types';
-import { AuthProvider } from './components/AuthContext';
+import { AdminView } from './components/AdminView';
+import { StoreProduct } from './types';
+import { AuthProvider, useAuth } from './components/AuthContext';
+import { supabase } from './services/supabaseClient';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 const AppContent: React.FC = () => {
   const { dir } = useLanguage();
-  const [currentView, setCurrentView] = useState<ViewType>('home');
-  const [selectedPlan, setSelectedPlan] = useState<StoreProduct | null>(null);
+  const { user } = useAuth();
   
   // Initialize sidebar based on screen width
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
@@ -23,46 +25,25 @@ const AppContent: React.FC = () => {
     return true;
   });
 
-  const [storeSection, setStoreSection] = useState<'top' | 'packs'>('top');
+  // Update last_seen when user is authenticated using RPC
+  useEffect(() => {
+    if (user) {
+      const touchLastSeen = async () => {
+        try {
+          // Use RPC 'touch_user_activity' which handles permissions (SECURITY DEFINER)
+          // and sets timestamp to Postgres now()
+          const { error } = await supabase.rpc('touch_user_activity');
 
-  const handleSubscribe = (plan: StoreProduct) => {
-    setSelectedPlan(plan);
-    setCurrentView('payment');
-  };
-
-  const renderView = () => {
-    switch (currentView) {
-      case 'home':
-        return <HomeView />;
-      case 'profile':
-        return <ProfileView 
-          onUpgrade={() => {
-            setStoreSection('top');
-            setCurrentView('store');
-          }}
-          onBuyCredits={() => {
-            setStoreSection('packs');
-            setCurrentView('store');
-          }}
-        />;
-      case 'store':
-        return <StoreView onSubscribe={handleSubscribe} scrollToPacks={storeSection === 'packs'} />;
-      case 'payment':
-        if (!selectedPlan) {
-          setCurrentView('store');
-          return null;
+          if (error) {
+            console.error('Error updating last_seen via RPC:', error);
+          }
+        } catch (err) {
+          console.error('Error calling touchLastSeen:', err);
         }
-        return (
-          <PaymentView 
-            plan={selectedPlan} 
-            onBack={() => setCurrentView('store')} 
-            onConfirm={() => setCurrentView('home')} 
-          />
-        );
-      default:
-        return <HomeView />;
+      };
+      touchLastSeen();
     }
-  };
+  }, [user]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -74,12 +55,6 @@ const AppContent: React.FC = () => {
       <div className="flex flex-col md:flex-row min-h-screen">
         
         <Sidebar 
-          currentView={currentView} 
-          setView={(view) => {
-            // Reset store section when navigating via sidebar
-            if (view === 'store') setStoreSection('top');
-            setCurrentView(view);
-          }} 
           isOpen={isSidebarOpen}
           toggleSidebar={toggleSidebar}
         />
@@ -87,11 +62,60 @@ const AppContent: React.FC = () => {
         <div className="flex-1 flex flex-col min-w-0">
           <Navbar toggleSidebar={toggleSidebar} />
           <main className="flex-1 relative">
-            {renderView()}
+            <Routes>
+              <Route path="/" element={<HomeView />} />
+              <Route path="/profile" element={<ProfileWrapper />} />
+              <Route path="/shop" element={<StoreWrapper />} />
+              <Route path="/payment" element={<PaymentWrapper />} />
+              <Route path="/admin" element={<AdminView />} />
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
           </main>
         </div>
       </div>
     </div>
+  );
+};
+
+const ProfileWrapper = () => {
+  const navigate = useNavigate();
+  return (
+    <ProfileView 
+      onUpgrade={() => navigate('/shop')}
+      onBuyCredits={() => navigate('/shop', { state: { scrollToPacks: true } })}
+    />
+  );
+};
+
+const StoreWrapper = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state as { scrollToPacks?: boolean } | null;
+  
+  return (
+    <StoreView 
+      onSubscribe={(plan) => navigate('/payment', { state: { plan } })} 
+      scrollToPacks={state?.scrollToPacks} 
+    />
+  );
+};
+
+const PaymentWrapper = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state as { plan: StoreProduct } | null;
+
+  if (!state?.plan) {
+    return <Navigate to="/shop" replace />;
+  }
+
+  return (
+    <PaymentView 
+      plan={state.plan} 
+      onBack={() => navigate('/shop')} 
+      onConfirm={() => navigate('/')} 
+    />
   );
 };
 

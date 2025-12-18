@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useTheme } from './ThemeContext';
 import { useLanguage } from './LanguageContext';
-import { Moon, Sun, Globe, Info, X, Menu } from 'lucide-react';
+import { Moon, Sun, Globe, Info, X, Menu, Coins } from 'lucide-react';
+import { useAuth } from './AuthContext';
 
 interface NavbarProps {
   toggleSidebar: () => void;
@@ -10,6 +11,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ toggleSidebar }) => {
   const { isDark, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
+  const { user, balance } = useAuth();
   const [showInstructions, setShowInstructions] = useState(false);
 
   const toggleLanguage = () => {
@@ -33,9 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({ toggleSidebar }) => {
 
               {/* Branding (Logo + Title) */}
               <div className="flex items-center space-x-2 sm:space-x-3 rtl:space-x-reverse min-w-0">
-                <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center bg-brand-500 text-white font-bold text-xs">
-                  MT
-                </div>
+                <img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-lg flex-shrink-0 object-contain" />
                 <span className="text-lg sm:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400 font-[Cairo] tracking-wide truncate">
                   {t('appTitle')}
                 </span>
@@ -43,6 +43,17 @@ export const Navbar: React.FC<NavbarProps> = ({ toggleSidebar }) => {
             </div>
             
             <div className="flex items-center space-x-1 sm:space-x-2 rtl:space-x-reverse flex-shrink-0">
+              {/* Coin Balance (Only if Logged In) */}
+              {user && (
+                <>
+                  <div className="hidden sm:flex items-center space-x-1 rtl:space-x-reverse px-3 py-1.5 rounded-full bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">
+                    <Coins size={16} className="fill-current" />
+                    <span className="font-bold text-sm">{balance}</span>
+                  </div>
+                  <div className="h-6 w-px bg-gray-200 dark:bg-slate-800 mx-0.5 sm:mx-1" />
+                </>
+              )}
+
               <button
                 onClick={() => setShowInstructions(true)}
                 className="flex items-center space-x-1 rtl:space-x-reverse px-2 sm:px-3 py-1.5 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/20 dark:text-brand-300 dark:hover:bg-brand-900/30 transition-colors text-sm font-medium"

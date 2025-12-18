@@ -148,7 +148,7 @@ export const StoreView: React.FC<StoreViewProps> = ({ onSubscribe, scrollToPacks
         </div>
       </div>
 
-      {/* Credit Packs Section */}
+      {/* Coin Packs Section */}
       <div id="credit-packs" className="scroll-mt-24">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 flex items-center">
           <Coins className="me-2 text-yellow-500" />

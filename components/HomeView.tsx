@@ -5,6 +5,9 @@ import { translateMangaPage } from '../services/geminiService';
 import { useLanguage } from './LanguageContext';
 import { Upload, Image as ImageIcon, Sparkles, Copy, Play, Trash2, Languages, FileText, Quote } from 'lucide-react';
 import JSZip from 'jszip';
+import { useAuth } from './AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../services/supabaseClient';
 
 export const HomeView: React.FC = () => {
   const [images, setImages] = useState<UploadedImage[]>([]);
@@ -13,6 +16,8 @@ export const HomeView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { t } = useLanguage();
+  const { user, balance, updateBalance } = useAuth();
+  const navigate = useNavigate();
   
   // Queue management refs
   const imagesRef = useRef(images);
@@ -20,11 +25,16 @@ export const HomeView: React.FC = () => {
   const isProcessingRef = useRef(false);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const requestTimestampsRef = useRef<number[]>([]);
+  const balanceRef = useRef(balance);
 
-  // Keep imagesRef in sync with state for the async processor
+  // Keep refs in sync with state
   useEffect(() => {
     imagesRef.current = images;
   }, [images]);
+
+  useEffect(() => {
+    balanceRef.current = balance;
+  }, [balance]);
 
   const processQueue = async () => {
     if (isProcessingRef.current) return;
@@ -34,34 +44,40 @@ export const HomeView: React.FC = () => {
     while (queueRef.current.length > 0) {
       // RATE LIMIT LOGIC: Max 5 requests per minute
       const now = Date.now();
-      // Keep only timestamps within the last 60 seconds
       requestTimestampsRef.current = requestTimestampsRef.current.filter(t => now - t < 60000);
 
       if (requestTimestampsRef.current.length >= 5) {
-        // Find the oldest request in the current window
         const oldestRequestTime = requestTimestampsRef.current[0];
         const timeSinceOldest = now - oldestRequestTime;
-        const waitTime = 60000 - timeSinceOldest + 1000; // Add 1s buffer
+        const waitTime = 60000 - timeSinceOldest + 1000; 
 
         if (waitTime > 0) {
-          const nextId = queueRef.current[0]; // Peek at next image ID
-          
-          // Set status to waiting with cooldown
+          const nextId = queueRef.current[0]; 
           setImages((prev) => 
             prev.map((img) => img.id === nextId ? { ...img, status: 'waiting', cooldownEndsAt: now + waitTime } : img)
           );
-
-          // Wait for the cooldown
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          
-          // After waiting, loop continues and re-evaluates
           continue; 
         }
       }
 
       const nextId = queueRef.current.shift();
       if (nextId) {
-        // Record timestamp of this new request
+        // --- BALANCE CHECK START ---
+        // We only check if we have enough balance to proceed, we DO NOT deduct yet.
+        if (balanceRef.current < 1) {
+            setImages((prev) =>
+                prev.map((img) =>
+                  img.id === nextId
+                    ? { ...img, status: 'error', error: 'ERR_NO_BALANCE' }
+                    : img
+                )
+            );
+            // Skip processing for this image. 
+            // We continue the loop so other items also get marked as error if no balance remains.
+            continue;
+        }
+        
         requestTimestampsRef.current.push(Date.now());
         await processImage(nextId);
       }
@@ -93,9 +109,50 @@ export const HomeView: React.FC = () => {
         reader.onerror = reject;
       });
 
-      // Call Gemini API with the selected Target Language and Symbol preference
+      // Call Gemini API
       const result = await translateMangaPage(base64, imageToProcess.file.type, targetLanguage, useSymbols);
 
+      // --- DEDUCTION LOGIC ---
+      // Only runs AFTER successful translation
+      if (user) {
+        try {
+            // Use RPC for atomic safe deduction
+            const { data: newBalance, error: deductError } = await supabase.rpc('deduct_credits');
+            
+            if (deductError) {
+                console.error("Deduction failed:", deductError);
+                // If deduction fails (e.g. balance 0), we must handle it.
+                throw new Error('ERR_NO_BALANCE');
+            }
+
+            // Update local state with new balance from DB
+            if (typeof newBalance === 'number') {
+                updateBalance(newBalance);
+                balanceRef.current = newBalance;
+
+                // NEW: Increment spent coins tracking
+                // This RPC must be created in Supabase SQL
+                try {
+                  await supabase.rpc('increment_spent_coins');
+                } catch (e) {
+                  // Non-blocking error for stats
+                  console.warn('Failed to track spent coin stats:', e);
+                }
+            }
+        } catch (err: any) {
+             // If we failed to deduct, mark as error
+             setImages((prev) =>
+                prev.map((img) =>
+                  img.id === id
+                    ? { ...img, status: 'error', error: 'ERR_NO_BALANCE' }
+                    : img
+                )
+             );
+             return;
+        }
+      }
+
+      // If deduction successful (or guest user skipped), mark as success
       setImages((prev) =>
         prev.map((img) =>
           img.id === id
@@ -123,6 +180,12 @@ export const HomeView: React.FC = () => {
   });
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Auth Guard
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
+
     if (event.target.files && event.target.files.length > 0) {
       const files = Array.from(event.target.files) as File[];
       const newImages: UploadedImage[] = [];
@@ -133,14 +196,12 @@ export const HomeView: React.FC = () => {
             const zip = new JSZip();
             const zipContents = await zip.loadAsync(file);
             
-            // Get all files, filter for images, and sort by name to ensure correct order
             const imageFiles = Object.keys(zipContents.files)
               .filter(filename => !zipContents.files[filename].dir && /\.(jpg|jpeg|png|webp)$/i.test(filename))
               .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
             for (const filename of imageFiles) {
               const fileData = await zipContents.files[filename].async('blob');
-              // Detect mime type based on extension
               let mimeType = 'image/png';
               if (filename.toLowerCase().endsWith('.jpg') || filename.toLowerCase().endsWith('.jpeg')) mimeType = 'image/jpeg';
               else if (filename.toLowerCase().endsWith('.webp')) mimeType = 'image/webp';
@@ -159,14 +220,18 @@ export const HomeView: React.FC = () => {
 
       setImages((prev) => [...prev, ...newImages]);
     }
-    // Reset input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   const handleSingleTranslate = (id: string) => {
-    // Add to queue (end) and process
+    // Auth Guard
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
+
     if (!queueRef.current.includes(id)) {
         queueRef.current.push(id);
         setImages(prev => prev.map(img => img.id === id ? { ...img, status: 'queued' } : img));
@@ -175,7 +240,12 @@ export const HomeView: React.FC = () => {
   };
 
   const handleRetranslate = (id: string) => {
-    // Logic: Add to FRONT of queue to prioritize after current one finishes
+    // Auth Guard
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
+
     queueRef.current = queueRef.current.filter(qid => qid !== id);
     queueRef.current.unshift(id);
     
@@ -184,19 +254,25 @@ export const HomeView: React.FC = () => {
   };
 
   const handleProcessAll = () => {
+    // Auth Guard
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
+
     const idleImages = images.filter(img => img.status === 'idle');
     const idleIds = idleImages.map(img => img.id);
     
-    // Add all to queue
     queueRef.current.push(...idleIds);
-    
-    // Update status to queued
     setImages(prev => prev.map(img => idleIds.includes(img.id) ? { ...img, status: 'queued' } : img));
-    
     processQueue();
   };
 
   const handleCopyAll = async () => {
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
     const successImages = images.filter(img => img.status === 'success' && img.result);
     if (successImages.length === 0) return;
 
@@ -213,6 +289,10 @@ export const HomeView: React.FC = () => {
   };
 
   const handleCopyAllExtracted = async () => {
+    if (!user) {
+        navigate('/profile');
+        return;
+    }
     const successImages = images.filter(img => img.status === 'success' && img.result);
     if (successImages.length === 0) return;
 
@@ -333,7 +413,13 @@ export const HomeView: React.FC = () => {
       <div className="mb-12">
         <div 
           className="relative group border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-3xl p-10 bg-white dark:bg-slate-900/50 hover:border-brand-500 dark:hover:border-brand-500 transition-all cursor-pointer text-center"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+             if (!user) {
+                 navigate('/profile');
+             } else {
+                 fileInputRef.current?.click();
+             }
+          }}
         >
           <div className="absolute inset-0 bg-brand-50/50 dark:bg-brand-900/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
           

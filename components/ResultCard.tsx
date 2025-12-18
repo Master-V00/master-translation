@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { UploadedImage } from '../types';
 import { Loader2, AlertCircle, Copy, Check, RotateCcw, Clock, Hourglass } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
+import { Link } from 'react-router-dom';
 
 interface ResultCardProps {
   item: UploadedImage;
@@ -161,7 +162,14 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
 
           {item.status === 'error' && (
             <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-center justify-between">
-              <span>{item.error || t('unknownError')}</span>
+              {item.error === 'ERR_NO_BALANCE' ? (
+                <span>
+                  {t('insufficientBalance')} <Link to="/shop" className="underline font-bold hover:text-red-800 dark:hover:text-red-200">{t('visitStore')}</Link>
+                </span>
+              ) : (
+                <span>{item.error || t('unknownError')}</span>
+              )}
+              
               <button 
                 onClick={onRetranslate}
                 className="ml-4 flex items-center space-x-1 text-xs bg-white dark:bg-slate-800 border border-red-200 dark:border-red-800 px-3 py-1 rounded shadow-sm hover:bg-red-50 dark:hover:bg-red-900/30"
