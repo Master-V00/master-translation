@@ -10,12 +10,15 @@ interface AuthContextType {
   loading: boolean;
   balance: number;
   subscription: SubscriptionTier;
+  last_seen: string | null;
+  custom_sets: any[]; 
   signInWithGoogle: () => Promise<void>;
   signInWithDiscord: () => Promise<void>;
   signOut: () => Promise<void>;
   updateBalance: (newBalance: number) => void;
   getAllowedLanguages: () => TargetLanguage[];
   getMaxSymbolSets: () => number;
+  refreshUserData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,50 +29,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<number>(0);
   const [subscription, setSubscription] = useState<SubscriptionTier>('free');
+  const [last_seen, setLastSeen] = useState<string | null>(null);
+  const [custom_sets, setCustomSets] = useState<any[]>([]);
 
   const fetchUserData = async (userId: string, userEmail?: string) => {
     try {
-      // Try to get existing user
-      const { data, error } = await supabase
+      // 1. جلب بيانات الرصيد والاشتراك من جدول users
+      // @fix: Select 'last_seen' from the users table and update the state.
+      const { data: userData } = await supabase
         .from('users')
-        .select('balance, subscription')
+        .select('balance, subscription, last_seen')
         .eq('id', userId)
         .maybeSingle();
       
-      if (data) {
-        setBalance(data.balance || 0);
-        // Normalize subscription string to SubscriptionTier
-        const sub = (data.subscription || 'free').toLowerCase();
+      // 2. جلب مجموعات الرموز من الجدول الجديد custom_symbol_sets
+      const { data: setsData } = await supabase
+        .from('custom_symbol_sets')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (userData) {
+        setBalance(userData.balance || 0);
+        setLastSeen(userData.last_seen || null);
+        const sub = (userData.subscription || 'free').toLowerCase();
         if (['pro', 'pro-max', 'master'].includes(sub)) {
            setSubscription(sub as SubscriptionTier);
         } else {
            setSubscription('free');
         }
       } else {
-        // User does not exist in 'users' table (First time login)
+        // إذا كان مستخدم جديد، نقوم بإنشاء سجل له في جدول users
         const initialBalance = 10;
-        const { error: insertError } = await supabase
+        await supabase
           .from('users')
-          .insert([
-            { 
-              id: userId, 
-              email: userEmail, 
-              balance: initialBalance,
-              subscription: 'free'
-            }
-          ]);
+          .insert([{ id: userId, email: userEmail, balance: initialBalance, subscription: 'free' }]);
         
-        if (!insertError) {
-          setBalance(initialBalance);
-          setSubscription('free');
-        } else {
-           console.error('Error initializing new user:', insertError);
-           setBalance(0);
-           setSubscription('free');
-        }
+        setBalance(initialBalance);
+        setSubscription('free');
+        setLastSeen(null);
+      }
+
+      if (setsData) {
+        setCustomSets(setsData);
       }
     } catch (err) {
       console.error('Error fetching user data:', err);
+    }
+  };
+
+  const refreshUserData = async () => {
+    if (user) {
+      await fetchUserData(user.id, user.email);
     }
   };
 
@@ -83,7 +94,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
         if (session) {
           setSession(session);
           setUser(session.user);
@@ -91,11 +101,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (session.user) {
             fetchUserData(session.user.id, session.user.email);
           }
-        } else {
-          setSession(null);
-          setUser(null);
-          setBalance(0);
-          setSubscription('free');
         }
       } catch (error) {
         console.error('Error checking session:', error);
@@ -115,12 +120,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setBalance(0);
         setSubscription('free');
+        setLastSeen(null);
+        setCustomSets([]);
       }
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
          clearHash();
       }
-
       setLoading(false);
     });
 
@@ -128,38 +134,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin }
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error("Error signing in with Google:", error);
-    }
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    });
   };
 
   const signInWithDiscord = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'discord',
-        options: { redirectTo: window.location.origin }
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error("Error signing in with Discord:", error);
-    }
+    await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: { redirectTo: window.location.origin }
+    });
   };
 
   const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      setBalance(0);
-      setSubscription('free');
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
+    await supabase.auth.signOut();
+    setBalance(0);
+    setSubscription('free');
+    setLastSeen(null);
+    setCustomSets([]);
   };
 
   const updateBalance = (newBalance: number) => {
@@ -167,9 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getAllowedLanguages = (): TargetLanguage[] => {
-    if (subscription === 'free') {
-      return ['Arabic'];
-    }
+    if (subscription === 'free') return ['Arabic'];
     return ['Arabic', 'English', 'French', 'German'];
   };
 
@@ -178,7 +169,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       case 'master': return 3;
       case 'pro-max': return 2;
       case 'pro': return 1;
-      case 'free': 
       default: return 0;
     }
   };
@@ -190,12 +180,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading, 
       balance, 
       subscription,
+      last_seen,
+      custom_sets,
       signInWithGoogle, 
       signInWithDiscord, 
       signOut, 
       updateBalance,
       getAllowedLanguages,
-      getMaxSymbolSets
+      getMaxSymbolSets,
+      refreshUserData
     }}>
       {children}
     </AuthContext.Provider>

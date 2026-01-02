@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
-import { Home, User, ShoppingBag, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard } from 'lucide-react';
+
+import React, { useEffect, useState } from 'react';
+import { Home, User, ShoppingBag, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard, MessageSquare, LifeBuoy } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 import { useAuth } from './AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from './supabaseClient'; // عميل Supabase
+import { supabase } from '../services/supabaseClient'; 
+import { Scissors } from "lucide-react";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,13 +14,28 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
   const { t, dir } = useLanguage();
-  const { user, signOut } = useAuth();
+  const { user, signOut, last_seen } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [discordLink, setDiscordLink] = useState<string>('#');
 
-  // -----------------------
-  // Hook لتحديث last_seen
-  // -----------------------
+  useEffect(() => {
+    const fetchSystemStats = async () => {
+      try {
+        const { data } = await supabase
+          .from('system_stats')
+          .select('discord')
+          .maybeSingle();
+        if (data?.discord) {
+          setDiscordLink(data.discord);
+        }
+      } catch (err) {
+        console.error('Error fetching system stats:', err);
+      }
+    };
+    fetchSystemStats();
+  }, []);
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -36,14 +53,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
     const events = ['click', 'keydown', 'mousemove'];
     events.forEach(evt => window.addEventListener(evt, updateLastSeen));
 
-    updateLastSeen(); // تحديث أول مرة عند الدخول
+    updateLastSeen();
 
     return () => events.forEach(evt => window.removeEventListener(evt, updateLastSeen));
   }, [user?.id]);
 
-  // -----------------------
-  // دالة لتنسيق التاريخ
-  // -----------------------
   const formatLastSeen = (dateString: string) => {
     return new Date(dateString + 'Z').toLocaleString('en-US', {
       timeZone: 'Africa/Cairo',
@@ -60,6 +74,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
     { path: '/', icon: Home, label: t('navHome') },
     { path: '/profile', icon: User, label: t('navProfile') },
     { path: '/shop', icon: ShoppingBag, label: t('navStore') },
+    { path: '/merger', icon: Scissors, label: t('navMerger') },
+    { path: '/support', icon: LifeBuoy, label: t('navSupport') },
   ];
 
   if (user?.email === 'admin@example.com') {
@@ -94,7 +110,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
       >
         {/* Header */}
         <div className={`flex items-center h-16 px-4 border-b border-gray-200 dark:border-slate-800 justify-between`}>
-           <span className="font-bold text-xl text-brand-600 dark:text-brand-400 font-[Cairo]">MT</span>
+           <div className="flex items-center gap-2">
+             <img src="/logo.png" alt="MT" className="w-8 h-8 rounded-lg object-contain" />
+             <span className="font-bold text-xl text-brand-600 dark:text-brand-400 font-[Cairo]">MT</span>
+           </div>
            <button
             onClick={toggleSidebar}
             className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800 dark:text-gray-400 transition-colors"
@@ -128,14 +147,38 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
               </button>
             );
           })}
+
+          {/* Discord / Support Modern Card */}
+          <div className="mt-8 px-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="relative overflow-hidden bg-indigo-50 dark:bg-indigo-900/10 rounded-[2rem] p-5 border border-indigo-100 dark:border-indigo-900/20 group">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-500"></div>
+              
+              <div className="flex items-center gap-3 mb-3">
+                <img src="/discord.png" alt="Discord" className="w-10 h-10 object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-300" />
+                <h4 className="text-sm font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">{t('navSupport')}</h4>
+              </div>
+              
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed mb-4 whitespace-normal">
+                {t('supportDesc')}
+              </p>
+              
+              <button 
+                onClick={() => handleItemClick('/support')}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition-all"
+              >
+                <MessageSquare size={14} fill="currentColor" />
+                {t('joinDiscord')}
+              </button>
+            </div>
+          </div>
         </div>
         
         {/* Footer */}
         <div className="p-4 border-t border-gray-100 dark:border-slate-800">
           {user ? (
             <>
-              <div className="mb-2 text-sm text-gray-500 dark:text-slate-400">
-                Last seen: {user.last_seen ? formatLastSeen(user.last_seen) : '—'}
+              <div className="mb-2 text-sm text-gray-500 dark:text-slate-400 px-2 truncate">
+                Last seen: {last_seen ? formatLastSeen(last_seen) : '—'}
               </div>
               <button 
                 onClick={handleLogout}

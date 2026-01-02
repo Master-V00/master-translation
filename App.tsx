@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from './components/ThemeContext';
 import { Navbar } from './components/Navbar';
@@ -8,10 +9,12 @@ import { ProfileView } from './components/ProfileView';
 import { StoreView } from './components/StoreView';
 import { PaymentView } from './components/PaymentView';
 import { AdminView } from './components/AdminView';
+import { SupportView } from './components/SupportView';
 import { StoreProduct } from './types';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { supabase } from './services/supabaseClient';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import EditorApp from './components/EditorApp'; // ملف App بتاع المشروع الفرعي
 
 const AppContent: React.FC = () => {
   const { dir } = useLanguage();
@@ -68,6 +71,8 @@ const AppContent: React.FC = () => {
               <Route path="/shop" element={<StoreWrapper />} />
               <Route path="/payment" element={<PaymentWrapper />} />
               <Route path="/admin" element={<AdminView />} />
+              <Route path="/merger" element={<EditorApp />} />
+              <Route path="/support" element={<SupportView />} />
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

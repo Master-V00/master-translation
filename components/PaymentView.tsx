@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Check, UploadCloud } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
-import { StoreProduct, ViewType } from '../types';
+import { StoreProduct } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface PaymentViewProps {
   plan: StoreProduct;
@@ -14,15 +15,72 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ plan, onBack, onConfir
   const [method, setMethod] = useState<'binance' | 'vodafone' | null>(null);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // رفع الصورة على Cloudinary
+  const uploadReceiptToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', 'payment_receipts'); // ضع الـ preset الخاص بك
+
+    setUploading(true);
+
+    const res = await fetch(
+      'https://api.cloudinary.com/v1_1/dsii55y2z/image/upload', // ضع اسم Cloud Name الخاص بك
+      { method: 'POST', body: formData }
+    );
+
+    if (!res.ok) {
+      setUploading(false);
+      throw new Error('Upload failed');
+    }
+
+    const data = await res.json();
+    setUploading(false);
+
+    return data.secure_url;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (receipt) {
-      // Simulate submission
+    if (!receipt || !method) return;
+
+    try {
+      // احصل على بيانات المستخدم
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || !user.email) {
+        alert('لازم تكون مسجل دخول');
+        return;
+      }
+
+      // رفع الصورة
+      const receiptUrl = await uploadReceiptToCloudinary(receipt);
+
+      // حفظ البيانات في Supabase
+      const { error } = await supabase
+        .from('payments')
+        .insert({
+          user_email: user.email,
+          plan_name: plan.nameKey,
+          payment_method: method,
+          receipt_url: receiptUrl,
+          price: plan.price,
+          status: 'pending',
+        });
+
+      if (error) throw error;
+
       setIsSubmitted(true);
       setTimeout(() => {
         onConfirm();
       }, 3000);
+
+    } catch (err) {
+      console.error(err);
+      alert('حصل خطأ أثناء رفع الإيصال');
     }
   };
 
@@ -124,10 +182,10 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ plan, onBack, onConfir
 
                 <button
                   type="submit"
-                  disabled={!receipt}
+                  disabled={!receipt || uploading}
                   className="w-full py-3 px-6 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {t('confirmPayment')}
+                  {uploading ? 'Uploading...' : t('confirmPayment')}
                 </button>
               </form>
             </div>

@@ -19,6 +19,31 @@ export interface ThemeContextType {
   toggleTheme: () => void;
 }
 
+export enum MergeMode {
+  PAGES = 'PAGES',
+  PIXELS = 'PIXELS',
+  CROP = 'CROP',
+}
+
+export enum CropSubMode {
+  SEPARATE = 'SEPARATE',
+  DELETE = 'DELETE',
+}
+
+export enum OutputFormat {
+  PNG = 'image/png',
+  JPEG = 'image/jpeg',
+  WEBP = 'image/webp',
+}
+
+export interface UploadedFile {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+
+export type TranslationKey = string;
+
 export type TargetLanguage = 'English' | 'Arabic' | 'French' | 'German';
 export type AppLanguage = 'en' | 'ar';
 

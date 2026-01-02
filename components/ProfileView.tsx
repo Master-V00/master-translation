@@ -22,95 +22,80 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onUpgrade, onBuyCredit
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleCreateNew = () => {
+const handleCreateNew = () => {
     setCurrentSet({ name: '', symbols: {} });
-    setJsonInput('{\n  "": "Normal",\n  "()": "Thoughts"\n}');
+    setJsonInput('"": \n(): \n[]: '); // شكل بسيط للرموز
     setIsEditing(true);
     setJsonError(null);
-  };
+};
 
-  const handleEdit = (set: SymbolSet) => {
+  const handleEdit = (set: any) => {
     setCurrentSet(set);
-    setJsonInput(JSON.stringify(set.symbols, null, 2));
+    setJsonInput(set.symbols_text); // نأخذ النص مباشرة
     setIsEditing(true);
     setJsonError(null);
-  };
+	};
 
   // حذف من Supabase
-  const handleDelete = async (id: string) => {
+ const handleDelete = async (id: string) => {
     if (window.confirm(t('confirmDelete'))) {
-      try {
-        // فلترة المصفوفة لحذف المجموعة المختارة فقط
-        const updatedSets = (custom_sets || []).filter(s => s.id !== id);
-        
-        const { error } = await supabase
-          .from('users')
-          .update({ custom_sets: updatedSets })
-          .eq('id', user?.id);
-        
-        if (error) throw error;
-        await refreshUserData(); 
-      } catch (err) {
-        console.error("Delete error:", err);
-        alert("Failed to delete set");
-      }
+        try {
+            const { error } = await supabase
+                .from('custom_symbol_sets')
+                .delete()
+                .eq('id', id)
+                .eq('user_id', user?.id); // أمان إضافي
+            
+            if (error) throw error;
+            await refreshUserData(); // تأكد أن هذه الدالة تجلب البيانات من الجدول الجديد الآن
+        } catch (err) {
+            console.error("Delete error:", err);
+            alert("Failed to delete set");
+        }
     }
-  };
+};
 
   // حفظ في Supabase (إضافة أو تحديث)
 const handleSave = async () => {
     try {
-      setIsSaving(true);
-      setJsonError(null);
-      
-      // 1. فحص صحة الـ JSON والحماية من الهياكل الغريبة
-      const parsedSymbols = JSON.parse(jsonInput);
-      if (typeof parsedSymbols !== 'object' || parsedSymbols === null || Array.isArray(parsedSymbols)) {
-        throw new Error("Invalid Format");
-      }
+        setIsSaving(true);
+        setJsonError(null);
+        
+        // --- التعديل هنا: احذف كود JSON.parse تماماً ---
+        // لأننا نريد حفظ النص كرموز ترجمة وليس ككائن برمجـي
+        if (!jsonInput.trim()) {
+            throw new Error("Please enter some symbols");
+        }
 
-      // 2. تنظيف البيانات (Sanitization) لمنع أي محاولة SQL Injection أو Buffer Overflow
-      const sanitizedSymbols = {};
-      Object.entries(parsedSymbols).forEach(([key, value]) => {
-        // تنظيف المفتاح والقيمة وتحديد طولهم (حماية إضافية)
-        const safeKey = String(key).trim().substring(0, 50);
-        const safeValue = String(value).trim().substring(0, 500);
-        if (safeKey) sanitizedSymbols[safeKey] = safeValue;
-      });
+        const setData = {
+            name: (currentSet.name || 'Untitled Set').substring(0, 100),
+            symbols_text: jsonInput, // حفظ النص الخام
+            user_id: user?.id,
+            updated_at: new Date().toISOString()
+        };
 
-      // 3. تجهيز بيانات المجموعة
-      const setData = {
-        id: currentSet.id || crypto.randomUUID(),
-        name: (currentSet.name || 'Untitled Set').substring(0, 100),
-        symbols: sanitizedSymbols,
-        updated_at: new Date().toISOString()
-      };
+        if (currentSet.id) {
+            const { error } = await supabase
+                .from('custom_symbol_sets')
+                .update(setData)
+                .eq('id', currentSet.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase
+                .from('custom_symbol_sets')
+                .insert([setData]);
+            if (error) throw error;
+        }
 
-      // 4. تحديث المصفوفة (لو موجودة يعدلها، لو جديدة يضيفها)
-      let updatedSets = [];
-      if (currentSet.id) {
-        updatedSets = (custom_sets || []).map(s => s.id === currentSet.id ? setData : s);
-      } else {
-        updatedSets = [...(custom_sets || []), setData];
-      }
-
-      // 5. الحفظ في Supabase (استخدام Parameters يمنع الـ SQL Injection تلقائياً)
-      const { error } = await supabase
-        .from('users')
-        .update({ custom_sets: updatedSets })
-        .eq('id', user?.id);
-
-      if (error) throw error;
-
-      await refreshUserData();
-      setIsEditing(false);
-    } catch (e) {
-      console.error("Save error:", e);
-      setJsonError(t('invalidJson') || "Invalid JSON format");
+        await refreshUserData();
+        setIsEditing(false);
+    } catch (e: any) {
+        console.error("Save error:", e);
+        setJsonError(e.message);
     } finally {
-      setIsSaving(false);
+        setIsSaving(false);
     }
-  };
+};
 
   if (loading) {
      return <div className="p-10 text-center text-gray-500">{t('processing')}</div>;
@@ -304,8 +289,11 @@ const handleSave = async () => {
                custom_sets?.map(set => (
                  <div key={set.id} className="bg-gray-50 dark:bg-slate-950 p-4 rounded-xl border border-gray-200 dark:border-slate-800 group relative">
                    <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-2 truncate pr-16">{set.name}</h3>
+                  // ضع هذا مكانه
                    <div className="text-xs text-gray-500 font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-800 h-24 overflow-hidden mb-3 opacity-70">
-                     {JSON.stringify(set.symbols, null, 2)}
+                     <pre className="whitespace-pre-wrap break-all">
+                       {set.symbols_text}
+                     </pre>
                    </div>
                    
                    <div className="flex justify-end gap-2">

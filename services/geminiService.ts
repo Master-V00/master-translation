@@ -1,70 +1,67 @@
 
-import { GoogleGenAI, Schema, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
+import { supabase } from '../services/supabaseClient';
 
-// Gather all available API keys from environment variables
-// Supports individual variables (API_KEY, API_KEY_2...) and comma-separated lists
-const getApiKeys = () => {
-  const keys: string[] = [
-    process.env.API_KEY,
-    process.env.API_KEY_2,
-    process.env.API_KEY_3,
-    process.env.API_KEY_4,
-    process.env.API_KEY_5,
-  ]
-  .filter((k): k is string => !!k && k.trim().length > 0)
-  .flatMap(k => k.split(',').map(s => s.trim()))
-  .filter(k => k.length > 0);
-
-  // Remove duplicates
-  return [...new Set(keys)];
+// وظيفة تنظيف المفتاح لزيادة الأمان ومنع الأخطاء الناتجة عن المسافات الزائدة
+const cleanApiKey = (key: string) => {
+  return key.trim().replace(/[\n\r]/g, '');
 };
 
-const apiKeys = getApiKeys();
-let currentKeyIndex = 0;
-
-const getAIClient = () => {
-  if (apiKeys.length === 0) {
-    throw new Error("No API keys found. Please set API_KEY in your environment.");
-  }
-  return new GoogleGenAI({ apiKey: apiKeys[currentKeyIndex] });
+const cleanupResultText = (s: string) => {
+  if (!s || typeof s !== 'string') return '';
+  // إزالة أسوار Markdown والكلمات الزائدة
+  return s.replace(/```json/gi, '').replace(/```/g, '').replace(/^s*Response:\s*/i, '').trim();
 };
 
-const rotateKey = () => {
-  currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-  console.log(`Switching API key to index ${currentKeyIndex}`);
+const extractJsonFromText = (s: string) => {
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) throw new Error('NO_JSON_IN_RESPONSE');
+  return s.slice(start, end + 1);
 };
 
-// Define the response schema to ensure we get separated extracted and translated text
-const translationSchema: Schema = {
+/**
+ * تعريف هيكل البيانات (JSON Schema) لضمان استلام رد منظم
+ */
+const translationSchema = {
   type: Type.OBJECT,
   properties: {
-    extracted: {
+    extracted: { 
       type: Type.STRING,
-      description: "The raw text extracted from the image in the original language (Korean/Chinese/Japanese).",
+      description: "The raw text extracted from the image in its original language." 
     },
-    translated: {
+    translated: { 
       type: Type.STRING,
-      description: "The translated text formatted with the specific symbols requested.",
+      description: "The translated text formatted with the specific symbols requested." 
     },
   },
   required: ["extracted", "translated"],
 };
 
+/**
+ * الدالة الأساسية لترجمة صفحة مانجا/مانهوا
+ */
 export const translateMangaPage = async (
   base64Image: string, 
   mimeType: string, 
   targetLanguage: string, 
-  useSymbols: boolean,
-  customSymbols?: Record<string, string>
+  symbols: string | boolean 
 ) => {
   
-  let symbolRules = '';
+  // === إعداد قواعد التنسيق (Prompt Engineering) ===
+  let symbolRules = "";
+  let customSymbols: Record<string, string> = {};
+  let rulesList = "";
 
-  if (customSymbols && Object.keys(customSymbols).length > 0) {
-    // Generate rules from custom symbols map
-    const rulesList = Object.entries(customSymbols)
-      .map(([symbol, desc]) => `   ${symbol} [Text] -> ${desc}`)
-      .join('\n');
+  if (typeof symbols === 'string') {
+    try {
+      customSymbols = JSON.parse(symbols);
+      rulesList = Object.entries(customSymbols)
+        .map(([k, v]) => `${k} [Text] -> ${v}`)
+        .join('\n    ');
+    } catch (e) {
+      console.error("Error parsing symbols", e);
+    }
 
     symbolRules = `
     CUSTOM FORMATTING RULES (STRICT):
@@ -119,7 +116,7 @@ export const translateMangaPage = async (
     - Just provide the translated text.
     `;
 
-  const formattingInstruction = useSymbols ? symbolRules : plainRules;
+  const formattingInstruction = (symbols !== false) ? symbolRules : plainRules;
 
   const systemPrompt = `
     You are a professional Manga/Manhwa translator and typesetter assistant. 
@@ -149,64 +146,67 @@ export const translateMangaPage = async (
     - 'translated': The ${targetLanguage} translation.
     `;
 
-  // Try loop for API key rotation
-  let lastError: any;
-  const maxAttempts = Math.max(1, apiKeys.length);
+  // === منطق البحث التسلسلي عن المفاتيح (Sequential Key Search) ===
   
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  // 1. جلب جميع المفاتيح النشطة من قاعدة البيانات مرتبة
+  const { data: keys, error: fetchError } = await supabase
+    .from('api_keys_status')
+    .select('*')
+    .eq('is_active', true)
+    .order('id', { ascending: true });
+
+  if (fetchError) throw new Error(`Failed to fetch keys: ${fetchError.message}`);
+  if (!keys || keys.length === 0) throw new Error("No active API keys found in database.");
+
+  let lastError: any = null;
+
+  // 2. المحاولة مع كل مفتاح بالتسلسل
+  for (const keyData of keys) {
     try {
-      const ai = getAIClient();
+      // تنظيف المفتاح
+      const apiKey = cleanApiKey(keyData.key || keyData.key_value);
+      
+      // استخدام اسم الموديل من قاعدة البيانات، أو الافتراضي إذا لم يوجد
+      const modelName = keyData.model_type || "gemini-2.5-flash"; 
+
+      // تهيئة المكتبة محلياً (Direct Client-Side)
+      const ai = new GoogleGenAI({ apiKey });
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: modelName,
+        contents: {
+          role: "user",
+          parts: [
+            { inlineData: { data: base64Image, mimeType: mimeType } },
+            { text: `Extract and translate to ${targetLanguage}.` }
+          ]
+        },
         config: {
-          systemInstruction: systemPrompt,
           responseMimeType: "application/json",
           responseSchema: translationSchema,
-          temperature: 0.3, 
-        },
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Image,
-                mimeType: mimeType,
-              },
-            },
-            {
-              text: `Extract and translate to ${targetLanguage}. Ensure NO newlines inside a single bubble text.`,
-            },
-          ],
+          temperature: 0.3,
+          systemInstruction: systemPrompt,
         },
       });
 
-      const text = response.text;
-      if (!text) throw new Error("No response from Gemini");
+      const rawText = response.text;
+      if (!rawText) throw new Error("Empty response from AI");
 
-      return JSON.parse(text);
+      // تنظيف واستخراج الـ JSON
+      const cleanedText = cleanupResultText(rawText);
+      const jsonString = extractJsonFromText(cleanedText);
+      return JSON.parse(jsonString);
 
     } catch (error: any) {
-      console.error(`Attempt ${attempt + 1} failed with key index ${currentKeyIndex}:`, error);
+      console.warn(`Key ID ${keyData.id} (${keyData.model_type}) failed:`, error.message);
       lastError = error;
 
-      const isQuotaError = 
-        error.status === 429 || 
-        error.status === 503 ||
-        (error.message && (
-          error.message.includes("429") || 
-          error.message.includes("Quota") || 
-          error.message.includes("quota") ||
-          error.message.includes("exhausted")
-        ));
-
-      if (isQuotaError && apiKeys.length > 1) {
-        console.warn("Quota exhausted for current key. Rotating key...");
-        rotateKey();
-        continue; // Retry with next key
-      }
-      throw error;
+      // إذا كان الخطأ بسبب الحظر (Rate Limit)، يمكننا فقط تخطيه وتجربة المفتاح التالي
+      // لا نقوم بتعقيد الأمور بحجز أو قفل المفاتيح كما طلبت (Light Protection)
+      continue;
     }
   }
-  
-  throw lastError;
+
+  // إذا فشلت كل المفاتيح
+  throw lastError || new Error("All API keys failed to generate content.");
 };

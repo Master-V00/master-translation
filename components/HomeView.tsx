@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ResultCard } from './ResultCard';
 import { UploadedImage, TargetLanguage } from '../types';
@@ -11,13 +12,19 @@ import { supabase } from '../services/supabaseClient';
 
 export const HomeView: React.FC = () => {
   const [images, setImages] = useState<UploadedImage[]>([]);
-  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>('English');
-  const [useSymbols, setUseSymbols] = useState<boolean>(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // 1. استخراج كل شيء من الـ Hooks أولاً
   const { t } = useLanguage();
-  const { user, balance, updateBalance } = useAuth();
+  const { user, balance, updateBalance, getAllowedLanguages, subscription, custom_sets } = useAuth();
   const navigate = useNavigate();
+
+  // 2. الآن يمكنك استخدام getAllowedLanguages لأنها أصبحت معرفة
+  const allowedLangs = getAllowedLanguages();
+  
+  // 3. تعريف الـ States التي تعتمد على القيم السابقة
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>(allowedLangs[0] || 'Arabic');
+  const [selectedSymbolSet, setSelectedSymbolSet] = useState<string>('default');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Queue management refs
   const imagesRef = useRef(images);
@@ -63,21 +70,20 @@ export const HomeView: React.FC = () => {
 
       const nextId = queueRef.current.shift();
       if (nextId) {
-        // --- BALANCE CHECK START ---
-        // We only check if we have enough balance to proceed, we DO NOT deduct yet.
-        if (balanceRef.current < 1) {
-            setImages((prev) =>
-                prev.map((img) =>
+       // --- BALANCE CHECK START ---
+      const isSubscriptionActive = subscription && subscription !== 'free';
+
+      if (!isSubscriptionActive && balanceRef.current < 1) {
+          setImages((prev) =>
+              prev.map((img) =>
                   img.id === nextId
-                    ? { ...img, status: 'error', error: 'ERR_NO_BALANCE' }
-                    : img
-                )
-            );
-            // Skip processing for this image. 
-            // We continue the loop so other items also get marked as error if no balance remains.
-            continue;
-        }
-        
+                      ? { ...img, status: 'error', error: 'ERR_NO_BALANCE' }
+                      : img
+              )
+          );
+          continue;
+      }
+
         requestTimestampsRef.current.push(Date.now());
         await processImage(nextId);
       }
@@ -91,82 +97,83 @@ export const HomeView: React.FC = () => {
     const imageToProcess = imagesRef.current.find((img) => img.id === id);
     if (!imageToProcess) return;
 
-    // Update status to processing (clearing any waiting status)
     setImages((prev) =>
       prev.map((img) => (img.id === id ? { ...img, status: 'processing', error: undefined, cooldownEndsAt: undefined } : img))
     );
 
     try {
-      // Convert to Base64
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(imageToProcess.file);
         reader.onload = () => {
-          const result = reader.result as string;
-          const base64Data = result.split(',')[1];
+          const resultData = reader.result as string;
+          const base64Data = resultData.split(',')[1];
           resolve(base64Data);
         };
         reader.onerror = reject;
       });
 
-      // Call Gemini API
-      const result = await translateMangaPage(base64, imageToProcess.file.type, targetLanguage, useSymbols);
+      let finalSymbols: string | boolean = true;
+      if (selectedSymbolSet === 'none') {
+        finalSymbols = false;
+      } else if (selectedSymbolSet === 'default') {
+        finalSymbols = true;
+      } else {
+        const chosenSet = (custom_sets || []).find(s => s.id === selectedSymbolSet);
+        finalSymbols = chosenSet ? chosenSet.symbols_text : true;
+      }
 
-      // --- DEDUCTION LOGIC ---
-      // Only runs AFTER successful translation
+      const result = await translateMangaPage(
+        base64,
+        imageToProcess.file.type,
+        targetLanguage,
+        finalSymbols
+      );
+
       if (user) {
+        const isSubscriptionActive = subscription && subscription !== 'free';
+
+        if (!isSubscriptionActive) {
+          const { data: newBalance, error: deductError } = await supabase.rpc('deduct_credits');
+          if (deductError) throw new Error('ERR_NO_BALANCE');
+          
+          if (typeof newBalance === 'number') {
+            updateBalance(newBalance);
+            balanceRef.current = newBalance;
+          }
+        }
+        
         try {
-            // Use RPC for atomic safe deduction
-            const { data: newBalance, error: deductError } = await supabase.rpc('deduct_credits');
-            
-            if (deductError) {
-                console.error("Deduction failed:", deductError);
-                // If deduction fails (e.g. balance 0), we must handle it.
-                throw new Error('ERR_NO_BALANCE');
-            }
-
-            // Update local state with new balance from DB
-            if (typeof newBalance === 'number') {
-                updateBalance(newBalance);
-                balanceRef.current = newBalance;
-
-                // NEW: Increment spent coins tracking
-                // This RPC must be created in Supabase SQL
-                try {
-                  await supabase.rpc('increment_spent_coins');
-                } catch (e) {
-                  // Non-blocking error for stats
-                  console.warn('Failed to track spent coin stats:', e);
-                }
-            }
-        } catch (err: any) {
-             // If we failed to deduct, mark as error
-             setImages((prev) =>
-                prev.map((img) =>
-                  img.id === id
-                    ? { ...img, status: 'error', error: 'ERR_NO_BALANCE' }
-                    : img
-                )
-             );
-             return;
+          await supabase.rpc('increment_system_stats');
+          await supabase.rpc('increment_spent_coins');
+        } catch (e) {
+          console.warn('System stats update failed:', e);
         }
       }
 
-      // If deduction successful (or guest user skipped), mark as success
       setImages((prev) =>
         prev.map((img) =>
-          img.id === id
-            ? { ...img, status: 'success', result }
-            : img
+          img.id === id ? { ...img, status: 'success', result } : img
         )
       );
-    } catch (error) {
-      console.error(error);
+
+    } catch (error: any) {
+      console.error('Processing error:', error);
+      
+      const msg = error.message?.toLowerCase() || "";
+      if (error.status === 429 || msg.includes("quota") || msg.includes("exhausted")) {
+        try {
+          await supabase.rpc('increment_api_global_status');
+        } catch (e) {
+          console.error("Failed to update global status stat", e);
+        }
+      }
+
+      const errorMsg = error.message === 'ERR_NO_BALANCE' ? 'ERR_NO_BALANCE' : t('unknownError');
+      
       setImages((prev) =>
         prev.map((img) =>
-          img.id === id
-            ? { ...img, status: 'error', error: t('unknownError') }
-            : img
+          img.id === id ? { ...img, status: 'error', error: errorMsg } : img
         )
       );
     }
@@ -180,7 +187,6 @@ export const HomeView: React.FC = () => {
   });
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Auth Guard
     if (!user) {
         navigate('/profile');
         return;
@@ -226,7 +232,6 @@ export const HomeView: React.FC = () => {
   };
 
   const handleSingleTranslate = (id: string) => {
-    // Auth Guard
     if (!user) {
         navigate('/profile');
         return;
@@ -240,7 +245,6 @@ export const HomeView: React.FC = () => {
   };
 
   const handleRetranslate = (id: string) => {
-    // Auth Guard
     if (!user) {
         navigate('/profile');
         return;
@@ -254,7 +258,6 @@ export const HomeView: React.FC = () => {
   };
 
   const handleProcessAll = () => {
-    // Auth Guard
     if (!user) {
         navigate('/profile');
         return;
@@ -320,7 +323,6 @@ export const HomeView: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 animate-in fade-in duration-300">
       
-      {/* Header Section */}
       <div className="text-center mb-8">
         <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight font-[Cairo]">
           {t('appTitle')}
@@ -330,7 +332,6 @@ export const HomeView: React.FC = () => {
         </p>
       </div>
 
-      {/* Action Toolbar */}
       {images.length > 0 && (
         <div className="sticky top-20 z-40 mb-8 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
           <div className="flex items-center space-x-2 rtl:space-x-reverse">
@@ -349,29 +350,36 @@ export const HomeView: React.FC = () => {
               <span>{t('clear')}</span>
             </button>
 
-            <button
-              onClick={() => setUseSymbols(!useSymbols)}
-              className={`flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg transition-colors font-medium text-sm border ${
-                useSymbols 
-                  ? 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800 dark:hover:bg-purple-900/40' 
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-slate-800 dark:text-gray-400 dark:border-slate-700 dark:hover:bg-slate-700'
-              }`}
+          <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-purple-100 dark:border-slate-700 shadow-sm transition-all hover:border-purple-300 dark:hover:border-slate-600 group">
+            <Quote size={18} className="text-purple-600 dark:text-purple-400" />
+            <select
+              value={selectedSymbolSet}
+              onChange={(e) => setSelectedSymbolSet(e.target.value)}
+              className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[140px]"
             >
-              <Quote size={16} className={useSymbols ? 'fill-current' : ''} />
-              <span>{t('useSymbols')}</span>
-            </button>
+               <option value="none" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('noSymbols')}</option>
+               <option value="default" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('defaultSymbols')}</option>
+    
+               {subscription !== 'free' && custom_sets?.map((set) => (
+                 <option key={set.id} value={set.id} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
+                   {set.name}
+                 </option>
+               ))}
+             </select>
+           </div>
 
             <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-brand-100 dark:border-slate-700 shadow-sm transition-all hover:border-brand-300 dark:hover:border-slate-600 group">
               <Languages size={18} className="text-brand-600 dark:text-brand-400" />
               <select 
                 value={targetLanguage}
                 onChange={(e) => setTargetLanguage(e.target.value as TargetLanguage)}
-                className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[100px] [&>option]:text-gray-900 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-gray-100"
+                className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[100px]"
               >
-                <option value="English">English</option>
-                <option value="Arabic">Arabic</option>
-                <option value="French">French</option>
-                <option value="German">German</option>
+                {getAllowedLanguages().map((lang) => (
+                  <option key={lang} value={lang} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
+                    {lang}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -409,7 +417,6 @@ export const HomeView: React.FC = () => {
         </div>
       )}
 
-      {/* Upload Area */}
       <div className="mb-12">
         <div 
           className="relative group border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-3xl p-10 bg-white dark:bg-slate-900/50 hover:border-brand-500 dark:hover:border-brand-500 transition-all cursor-pointer text-center"
@@ -445,7 +452,6 @@ export const HomeView: React.FC = () => {
         </div>
       </div>
 
-      {/* Image List */}
       <div className="space-y-8">
         {images.map((img) => (
           <div key={img.id} className="relative">
