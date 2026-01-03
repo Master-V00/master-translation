@@ -134,6 +134,7 @@ export const HomeView: React.FC = () => {
         const isSubscriptionActive = subscription && subscription !== 'free';
 
         if (!isSubscriptionActive) {
+          // 1. خصم النقاط
           const { data: newBalance, error: deductError } = await supabase.rpc('deduct_credits');
           if (deductError) throw new Error('ERR_NO_BALANCE');
           
@@ -141,11 +142,18 @@ export const HomeView: React.FC = () => {
             updateBalance(newBalance);
             balanceRef.current = newBalance;
           }
+
+          // 2. إضافة إلى spent_coins (فقط عند الخصم)
+          try {
+            await supabase.rpc('increment_spent_coins');
+          } catch (e) {
+            console.warn('Spent coins update failed:', e);
+          }
         }
         
+        // 3. تحديث إحصائيات النظام (daily, monthly, yearly) لكل عملية ناجحة
         try {
           await supabase.rpc('increment_system_stats');
-          await supabase.rpc('increment_spent_coins');
         } catch (e) {
           console.warn('System stats update failed:', e);
         }

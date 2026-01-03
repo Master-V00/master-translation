@@ -146,30 +146,63 @@ export const translateMangaPage = async (
     - 'translated': The ${targetLanguage} translation.
     `;
 
-  // === منطق البحث التسلسلي عن المفاتيح (Sequential Key Search) ===
-  
-  // 1. جلب جميع المفاتيح النشطة من قاعدة البيانات مرتبة
-  const { data: keys, error: fetchError } = await supabase
-    .from('api_keys_status')
-    .select('*')
-    .eq('is_active', true)
-    .order('id', { ascending: true });
-
-  if (fetchError) throw new Error(`Failed to fetch keys: ${fetchError.message}`);
-  if (!keys || keys.length === 0) throw new Error("No active API keys found in database.");
-
+  // === منطق إدارة المفاتيح (Locking & Rotation) ===
+  const MAX_RETRIES = 25; // عدد محاولات البحث عن مفتاح
+  let currentKeyId: number | null = null;
   let lastError: any = null;
 
-  // 2. المحاولة مع كل مفتاح بالتسلسل
-  for (const keyData of keys) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      // تنظيف المفتاح
-      const apiKey = cleanApiKey(keyData.key || keyData.key_value);
+      // 1. البحث عن مفتاح متاح
+      // الشروط: نشط + متاح + انتهى وقت القفل السابق (مر عليه الوقت)
+      const nowISO = new Date().toISOString();
       
-      // استخدام اسم الموديل من قاعدة البيانات، أو الافتراضي إذا لم يوجد
-      const modelName = keyData.model_type || "gemini-2.5-flash"; 
+      const { data: candidates, error: fetchError } = await supabase
+        .from('api_keys_status')
+        .select('*')
+        .eq('is_active', true)
+        .eq('status_usage', 'available')
+        .lt('status_in_use_until', nowISO) // التأكد أن تاريخ القفل السابق قد مر
+        .order('id', { ascending: true })
+        .limit(1);
 
-      // تهيئة المكتبة محلياً (Direct Client-Side)
+      if (fetchError) throw fetchError;
+
+      if (!candidates || candidates.length === 0) {
+        // لا توجد مفاتيح متاحة حالياً، ننتظر قليلاً ثم نعيد المحاولة
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
+      const candidate = candidates[0];
+      
+      // 2. قفل المفتاح (Locking)
+      // نغير الحالة لـ in_use ونضع التاريخ المستقبلي (بعد دقيقة ونصف)
+      const lockDurationMs = 180 * 1000; // 3 minutes
+      const futureLockDate = new Date(Date.now() + lockDurationMs).toISOString();
+
+      const { data: lockedKey, error: lockError } = await supabase
+        .from('api_keys_status')
+        .update({ 
+          status_usage: 'in_use',
+          status_in_use_until: futureLockDate 
+        })
+        .eq('id', candidate.id)
+        .eq('status_usage', 'available') // Optimistic Concurrency Check
+        .select()
+        .single();
+
+      // إذا فشل القفل (ربما أخذه شخص آخر في نفس اللحظة)، نعيد المحاولة
+      if (lockError || !lockedKey) {
+        continue;
+      }
+
+      currentKeyId = lockedKey.id;
+
+      // 3. استخدام المفتاح
+      const apiKey = cleanApiKey(lockedKey.key || lockedKey.key_value);
+      const modelName = lockedKey.model_type || "gemini-3-flash-preview";
+
       const ai = new GoogleGenAI({ apiKey });
       
       const response = await ai.models.generateContent({
@@ -192,21 +225,60 @@ export const translateMangaPage = async (
       const rawText = response.text;
       if (!rawText) throw new Error("Empty response from AI");
 
-      // تنظيف واستخراج الـ JSON
+      // 4. تحرير المفتاح (Success Unlock)
+      // نرجعه لـ available ونحدث التاريخ للوقت الحالي (ليصبح متاحاً فوراً للمحاولة التالية)
+      await supabase
+        .from('api_keys_status')
+        .update({ 
+          status_usage: 'available',
+          status_in_use_until: new Date().toISOString()
+        })
+        .eq('id', currentKeyId);
+
+      // معالجة النتيجة وإرجاعها
       const cleanedText = cleanupResultText(rawText);
       const jsonString = extractJsonFromText(cleanedText);
       return JSON.parse(jsonString);
 
     } catch (error: any) {
-      console.warn(`Key ID ${keyData.id} (${keyData.model_type}) failed:`, error.message);
       lastError = error;
+      const msg = error.message?.toLowerCase() || "";
+      const isQuotaError = error.status === 429 || msg.includes("quota") || msg.includes("exhausted") || msg.includes("429");
 
-      // إذا كان الخطأ بسبب الحظر (Rate Limit)، يمكننا فقط تخطيه وتجربة المفتاح التالي
-      // لا نقوم بتعقيد الأمور بحجز أو قفل المفاتيح كما طلبت (Light Protection)
-      continue;
+      if (currentKeyId) {
+        if (isQuotaError) {
+          console.warn(`Key ID ${currentKeyId} exhausted (Quota). Deactivating...`);
+          // 5. تعطيل المفتاح في حالة الكوتا (Error Handling - Quota)
+          // نجعله is_active = false
+          await supabase
+            .from('api_keys_status')
+            .update({ 
+              is_active: false, // تعطيل المفتاح
+              status_usage: 'available', // تحرير القفل لعدم تعليق النظام
+              status_in_use_until: new Date().toISOString()
+            })
+            .eq('id', currentKeyId);
+        } else {
+          // 6. تحرير المفتاح عند أخطاء أخرى (Network, Parsing, etc.)
+          await supabase
+            .from('api_keys_status')
+            .update({ 
+              status_usage: 'available',
+              status_in_use_until: new Date().toISOString()
+            })
+            .eq('id', currentKeyId);
+        }
+      }
+
+      // إذا كان خطأ كوتا، نحاول فوراً مع مفتاح آخر.
+      // إذا كان خطأ آخر، ننتظر قليلاً (Backoff)
+      if (!isQuotaError) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      
+      currentKeyId = null; // Reset for next iteration
     }
   }
 
-  // إذا فشلت كل المفاتيح
-  throw lastError || new Error("All API keys failed to generate content.");
+  throw lastError || new Error("Failed to translate after multiple attempts (No valid keys or persistent errors).");
 };
