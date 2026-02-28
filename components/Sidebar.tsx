@@ -1,11 +1,10 @@
 
 import React, { useEffect, useState } from 'react';
-import { Home, User, ShoppingBag, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard, MessageSquare, LifeBuoy } from 'lucide-react';
+import { Home, User, ShoppingBag, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard, MessageSquare, LifeBuoy, Gift, BookOpen, Scissors, History } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 import { useAuth } from './AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient'; 
-import { Scissors } from "lucide-react";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -74,7 +73,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
     { path: '/', icon: Home, label: t('navHome') },
     { path: '/profile', icon: User, label: t('navProfile') },
     { path: '/shop', icon: ShoppingBag, label: t('navStore') },
+    { path: '/earn', icon: Gift, label: t('navEarn') },
+    { path: '/viewer-manga', icon: BookOpen, label: t('navMangaReader') },
     { path: '/merger', icon: Scissors, label: t('navMerger') },
+    { path: '/cover-design', icon: BookOpen, label: t('navCoverDesign') },
+    { path: '/history', icon: History, label: t('navHistory') },
     { path: '/support', icon: LifeBuoy, label: t('navSupport') },
   ];
 

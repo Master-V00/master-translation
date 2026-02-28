@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { supabase } from '../services/supabaseClient';
+import { TermReplacement } from '../types';
 
 // وظيفة تنظيف المفتاح لزيادة الأمان ومنع الأخطاء الناتجة عن المسافات الزائدة
 const cleanApiKey = (key: string) => {
@@ -45,7 +46,8 @@ export const translateMangaPage = async (
   base64Image: string, 
   mimeType: string, 
   targetLanguage: string, 
-  symbols: string | boolean 
+  symbols: string | boolean,
+  customTerms: TermReplacement[] = []
 ) => {
   
   // === إعداد قواعد التنسيق (Prompt Engineering) ===
@@ -118,6 +120,21 @@ export const translateMangaPage = async (
 
   const formattingInstruction = (symbols !== false) ? symbolRules : plainRules;
 
+  // === إعداد قواعد المصطلحات الخاصة ===
+  let terminologyInstruction = "";
+  if (customTerms && customTerms.length > 0) {
+    const termRules = customTerms.map(t => `- IF found "${t.original}" (or variations), MUST be translated as "${t.replacement}"`).join('\n');
+    terminologyInstruction = `
+    CRITICAL TERMINOLOGY REPLACEMENT RULES (HIGHEST PRIORITY):
+    You MUST strictly adhere to the following replacement rules during translation.
+    If you encounter the "Original Word", replace its translation with the "Replacement Word".
+    
+    ${termRules}
+    
+    Check for these specific words and apply the replacements WITHOUT EXCEPTION.
+    `;
+  }
+
   const systemPrompt = `
     You are a professional Manga/Manhwa translator and typesetter assistant. 
     Your task is to analyze the provided image (Manga/Manhwa page), extract the text in its original language, and translate it into ${targetLanguage}.
@@ -125,6 +142,8 @@ export const translateMangaPage = async (
     VISUAL CONTEXT & GENDER PRECISION:
     - CRITICAL: Look at the image to identify the GENDER of the speaker and the listener.
     - Use this visual context to ensure correct grammatical gender agreements.
+
+    ${terminologyInstruction}
 
     TRANSLATION STYLE:
     - GENERAL: Do not change the original meaning of the text.
@@ -147,7 +166,7 @@ export const translateMangaPage = async (
     `;
 
   // === منطق إدارة المفاتيح (Locking & Rotation) ===
-  const MAX_RETRIES = 25; // عدد محاولات البحث عن مفتاح
+  const MAX_RETRIES = 20; // عدد محاولات البحث عن مفتاح
   let currentKeyId: number | null = null;
   let lastError: any = null;
 
@@ -178,7 +197,7 @@ export const translateMangaPage = async (
       
       // 2. قفل المفتاح (Locking)
       // نغير الحالة لـ in_use ونضع التاريخ المستقبلي (بعد دقيقة ونصف)
-      const lockDurationMs = 180 * 1000; // 3 minutes
+      const lockDurationMs = 90 * 1000; // 1.5 minutes
       const futureLockDate = new Date(Date.now() + lockDurationMs).toISOString();
 
       const { data: lockedKey, error: lockError } = await supabase
@@ -281,4 +300,98 @@ export const translateMangaPage = async (
   }
 
   throw lastError || new Error("Failed to translate after multiple attempts (No valid keys or persistent errors).");
+};
+
+/**
+ * دالة تصميم الأغلفة (Cover Design)
+ * تم تعديلها لتجلب المفتاح من جدول api_messages وتستخدم OpenRouter
+ */
+export const generateCoverDesign = async (
+  base64Image: string,
+  mimeType: string,
+  customTitle: string,
+  targetLanguage: string
+): Promise<string> => {
+  try {
+    // 1. جلب مفتاح OpenRouter من جدول api_messages
+    const { data: apiData, error: fetchError } = await supabase
+      .from('api_messages')
+      .select('api')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (fetchError || !apiData?.api) {
+      throw new Error("Failed to fetch API key from api_messages table");
+    }
+
+    const apiKey = apiData.api.trim();
+
+    const prompt = `
+      You are an expert manga typesetter and graphic designer.
+      Your task is to REDESIGN the title of this manga cover.
+      
+      INSTRUCTIONS:
+      1. Identify the main title text in the image (usually large, styled text).
+      2. REMOVE the original title completely (inpainting).
+      3. INSERT the new title: "${customTitle ? customTitle : `(Translate the original title to ${targetLanguage})`}".
+      4. STYLE MATCHING: The new title MUST match the original title's typography, color, 3D effects, shadows, and overall aesthetic.
+      5. Cleanliness: Ensure the background behind the removed text is reconstructed seamlessly.
+      
+      Return ONLY the image.
+    `;
+
+    // 2. استدعاء OpenRouter API
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "Master Translation",
+      },
+      body: JSON.stringify({
+        "model": "google/gemini-2.5-flash-image-preview",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": prompt },
+              { "type": "image_url", "image_url": { "url": `data:${mimeType};base64,${base64Image}` } }
+            ]
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData?.error?.message || "OpenRouter API request failed");
+    }
+
+    const data = await response.json();
+    
+    // 3. استخراج الصورة من الرد
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) throw new Error("Empty response from AI");
+
+    // بعض النماذج قد تعيد الصورة كـ Markdown أو كـ URL مباشر أو Base64
+    // سنحاول استخراج رابط البيانات إذا كان موجوداً
+    const dataUriMatch = content.match(/data:image\/[a-zA-Z]*;base64,[^\s\)]*/);
+    if (dataUriMatch) {
+      return dataUriMatch[0];
+    }
+
+    // إذا لم يكن Data URI، نفترض أن الـ content نفسه هو الرابط أو يحتوي عليه
+    if (content.includes('http')) {
+      const urlMatch = content.match(/https?:\/\/[^\s\)]+/);
+      if (urlMatch) return urlMatch[0];
+    }
+
+    throw new Error("No image generated in response content");
+
+  } catch (error: any) {
+    console.error("Cover Design Error:", error);
+    throw error;
+  }
 };

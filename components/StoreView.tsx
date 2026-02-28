@@ -55,7 +55,7 @@ export const StoreView: React.FC<StoreViewProps> = ({ onSubscribe, scrollToPacks
       type: 'pack',
       nameKey: 'pack25',
       price: '1$',
-      credits: 35,
+      credits: 50,
       features: ['featurePack25', 'featureNoExpiry']
     },
     {
@@ -63,7 +63,7 @@ export const StoreView: React.FC<StoreViewProps> = ({ onSubscribe, scrollToPacks
       type: 'pack',
       nameKey: 'pack50',
       price: '2$',
-      credits: 60,
+      credits: 100,
       features: ['featurePack50', 'featureNoExpiry']
     },
     {
@@ -71,7 +71,7 @@ export const StoreView: React.FC<StoreViewProps> = ({ onSubscribe, scrollToPacks
       type: 'pack',
       nameKey: 'pack100',
       price: '5$',
-      credits: 150,
+      credits: 300,
       features: ['featurePack100', 'featureNoExpiry']
     }
   ];

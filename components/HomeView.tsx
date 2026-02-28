@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ResultCard } from './ResultCard';
-import { UploadedImage, TargetLanguage } from '../types';
+import { UploadedImage, TargetLanguage, TermReplacement, HistoryEntry } from '../types';
 import { translateMangaPage } from '../services/geminiService';
 import { useLanguage } from './LanguageContext';
-import { Upload, Image as ImageIcon, Sparkles, Copy, Play, Trash2, Languages, FileText, Quote } from 'lucide-react';
+import { Upload, Image as ImageIcon, Sparkles, Copy, Play, Trash2, Languages, FileText, Quote, ChevronUp, ChevronDown, Repeat2, Plus, X } from 'lucide-react';
 import JSZip from 'jszip';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -23,9 +23,40 @@ export const HomeView: React.FC = () => {
   
   // 3. تعريف الـ States التي تعتمد على القيم السابقة
   const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>(allowedLangs[0] || 'Arabic');
-  const [selectedSymbolSet, setSelectedSymbolSet] = useState<string>('default');
+  
+  // Initialize Symbol Set from LocalStorage or default to 'none'
+  const [selectedSymbolSet, setSelectedSymbolSet] = useState<string>(() => {
+    return localStorage.getItem('symbol_set_pref') || 'none';
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Toolbar visibility state
+  const [showToolbar, setShowToolbar] = useState(true);
+
+  // Custom Terms State - Initialize from LocalStorage
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  const [customTerms, setCustomTerms] = useState<TermReplacement[]>(() => {
+    try {
+        const saved = localStorage.getItem('custom_terms_pref');
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        return [];
+    }
+  });
+  
+  const [newOriginal, setNewOriginal] = useState('');
+  const [newReplacement, setNewReplacement] = useState('');
+
+  // Save Preferences when changed
+  useEffect(() => {
+    localStorage.setItem('symbol_set_pref', selectedSymbolSet);
+  }, [selectedSymbolSet]);
+
+  useEffect(() => {
+    localStorage.setItem('custom_terms_pref', JSON.stringify(customTerms));
+  }, [customTerms]);
+
   // Queue management refs
   const imagesRef = useRef(images);
   const queueRef = useRef<string[]>([]);
@@ -42,6 +73,57 @@ export const HomeView: React.FC = () => {
   useEffect(() => {
     balanceRef.current = balance;
   }, [balance]);
+
+  const handleAddTerm = () => {
+    if (newOriginal.trim() && newReplacement.trim()) {
+        const newTerm: TermReplacement = {
+            id: Math.random().toString(36).substring(7),
+            original: newOriginal.trim(),
+            replacement: newReplacement.trim()
+        };
+        setCustomTerms([...customTerms, newTerm]);
+        setNewOriginal('');
+        setNewReplacement('');
+    }
+  };
+
+  const handleRemoveTerm = (id: string) => {
+      setCustomTerms(customTerms.filter(t => t.id !== id));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          handleAddTerm();
+      }
+  };
+
+  // دالة حفظ السجل في LocalStorage
+  const saveToHistory = () => {
+    const successfulImages = imagesRef.current.filter(img => img.status === 'success' && img.result);
+    if (successfulImages.length === 0) return;
+
+    const savedHistoryStr = localStorage.getItem('translation_history');
+    let history: HistoryEntry[] = [];
+    if (savedHistoryStr) {
+      try { history = JSON.parse(savedHistoryStr); } catch (e) {}
+    }
+
+    const newEntry: HistoryEntry = {
+      id: crypto.randomUUID(),
+      title: `${t('batchPrefix')} #${(history.length + 1).toString().padStart(2, '0')}`,
+      date: new Date().toISOString(),
+      items: successfulImages.map(img => ({
+        fileName: img.file.name,
+        extracted: img.result?.extracted || '',
+        translated: img.result?.translated || ''
+      }))
+    };
+
+    history.unshift(newEntry);
+    localStorage.setItem('translation_history', JSON.stringify(history));
+    console.log("Translation batch saved to history.");
+  };
 
   const processQueue = async () => {
     if (isProcessingRef.current) return;
@@ -91,6 +173,9 @@ export const HomeView: React.FC = () => {
 
     isProcessingRef.current = false;
     setIsQueueRunning(false);
+    
+    // حفظ في السجل بعد انتهاء الطابور
+    saveToHistory();
   };
 
   const processImage = async (id: string) => {
@@ -127,7 +212,8 @@ export const HomeView: React.FC = () => {
         base64,
         imageToProcess.file.type,
         targetLanguage,
-        finalSymbols
+        finalSymbols,
+        customTerms // Pass custom terms here
       );
 
       if (user) {
@@ -341,87 +427,171 @@ export const HomeView: React.FC = () => {
       </div>
 
       {images.length > 0 && (
-        <div className="sticky top-20 z-40 mb-8 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse">
-            <ImageIcon size={20} className="text-brand-500" />
-            <span className="font-semibold text-gray-700 dark:text-gray-200">
-              {images.length} {t('pagesLoaded')}
-            </span>
-          </div>
-
-          <div className="flex gap-2 flex-wrap items-center">
-            <button
-              onClick={clearAll}
-              className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors font-medium text-sm"
-            >
-              <Trash2 size={16} />
-              <span>{t('clear')}</span>
-            </button>
-
-          <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-purple-100 dark:border-slate-700 shadow-sm transition-all hover:border-purple-300 dark:hover:border-slate-600 group">
-            <Quote size={18} className="text-purple-600 dark:text-purple-400" />
-            <select
-              value={selectedSymbolSet}
-              onChange={(e) => setSelectedSymbolSet(e.target.value)}
-              className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[140px]"
-            >
-               <option value="none" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('noSymbols')}</option>
-               <option value="default" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('defaultSymbols')}</option>
-    
-               {subscription !== 'free' && custom_sets?.map((set) => (
-                 <option key={set.id} value={set.id} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
-                   {set.name}
-                 </option>
-               ))}
-             </select>
-           </div>
-
-            <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-brand-100 dark:border-slate-700 shadow-sm transition-all hover:border-brand-300 dark:hover:border-slate-600 group">
-              <Languages size={18} className="text-brand-600 dark:text-brand-400" />
-              <select 
-                value={targetLanguage}
-                onChange={(e) => setTargetLanguage(e.target.value as TargetLanguage)}
-                className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[100px]"
-              >
-                {getAllowedLanguages().map((lang) => (
-                  <option key={lang} value={lang} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
-                    {lang}
-                  </option>
-                ))}
-              </select>
+        <div className="sticky top-20 z-40 mb-8 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-800 flex flex-col gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex justify-between items-center w-full">
+            <div className="flex items-center space-x-2 rtl:space-x-reverse">
+              <ImageIcon size={20} className="text-brand-500" />
+              <span className="font-semibold text-gray-700 dark:text-gray-200">
+                {images.length} {t('pagesLoaded')}
+              </span>
             </div>
 
             <button
-              onClick={handleCopyAllExtracted}
-              disabled={!images.some(i => i.status === 'success')}
-              className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/30 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed border border-indigo-200 dark:border-indigo-800"
+              onClick={() => setShowToolbar(!showToolbar)}
+              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors"
             >
-              <FileText size={16} />
-              <span>{t('copyAllExtracted')}</span>
-            </button>
-
-            <button
-              onClick={handleCopyAll}
-              disabled={!images.some(i => i.status === 'success')}
-              className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-200 dark:hover:bg-slate-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-slate-700"
-            >
-              <Copy size={16} />
-              <span>{t('copyAll')}</span>
-            </button>
-
-            <button
-              onClick={handleProcessAll}
-              disabled={isQueueRunning || !images.some(i => i.status === 'idle')}
-              className="flex items-center space-x-2 rtl:space-x-reverse px-6 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white shadow-md hover:shadow-lg transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isQueueRunning ? (
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-              ) : (
-                <Play size={16} fill="currentColor" />
-              )}
-              <span>{t('translateAll')}</span>
+              {showToolbar ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </button>
           </div>
+
+          {showToolbar && (
+            <div className="flex gap-2 flex-wrap items-center">
+              <button
+                onClick={clearAll}
+                className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors font-medium text-sm"
+              >
+                <Trash2 size={16} />
+                <span>{t('clear')}</span>
+              </button>
+
+            {/* Custom Terms Button */}
+            <button
+                onClick={() => setIsTermsModalOpen(true)}
+                className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors font-medium text-sm border border-amber-200 dark:border-amber-800"
+            >
+                <Repeat2 size={16} />
+                <span>{t('customTerms')} ({customTerms.length})</span>
+            </button>
+
+            <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-purple-100 dark:border-slate-700 shadow-sm transition-all hover:border-purple-300 dark:hover:border-slate-600 group">
+              <Quote size={18} className="text-purple-600 dark:text-purple-400" />
+              <select
+                value={selectedSymbolSet}
+                onChange={(e) => setSelectedSymbolSet(e.target.value)}
+                className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[140px]"
+              >
+                 <option value="none" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('noSymbols')}</option>
+                 <option value="default" className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">{t('defaultSymbols')}</option>
+      
+                 {subscription !== 'free' && custom_sets?.map((set) => (
+                   <option key={set.id} value={set.id} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
+                     {set.name}
+                   </option>
+                 ))}
+               </select>
+             </div>
+
+              <div className="flex items-center space-x-2 rtl:space-x-reverse bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border-2 border-brand-100 dark:border-slate-700 shadow-sm transition-all hover:border-brand-300 dark:hover:border-slate-600 group">
+                <Languages size={18} className="text-brand-600 dark:text-brand-400" />
+                <select 
+                  value={targetLanguage}
+                  onChange={(e) => setTargetLanguage(e.target.value as TargetLanguage)}
+                  className="bg-transparent border-none text-base font-semibold text-gray-800 dark:text-gray-100 focus:ring-0 cursor-pointer min-w-[100px]"
+                >
+                  {getAllowedLanguages().map((lang) => (
+                    <option key={lang} value={lang} className="text-gray-900 bg-white dark:bg-slate-800 dark:text-gray-100">
+                      {lang}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={handleCopyAllExtracted}
+                disabled={!images.some(i => i.status === 'success')}
+                className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/30 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed border border-indigo-200 dark:border-indigo-800"
+              >
+                <FileText size={16} />
+                <span>{t('copyAllExtracted')}</span>
+              </button>
+
+              <button
+                onClick={handleCopyAll}
+                disabled={!images.some(i => i.status === 'success')}
+                className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-200 dark:hover:bg-slate-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-slate-700"
+              >
+                <Copy size={16} />
+                <span>{t('copyAll')}</span>
+              </button>
+
+              <button
+                onClick={handleProcessAll}
+                disabled={isQueueRunning || !images.some(i => i.status === 'idle')}
+                className="flex items-center space-x-2 rtl:space-x-reverse px-6 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white shadow-md hover:shadow-lg transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isQueueRunning ? (
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                ) : (
+                  <Play size={16} fill="currentColor" />
+                )}
+                <span>{t('translateAll')}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Custom Terms Modal */}
+      {isTermsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsTermsModalOpen(false)}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
+                    <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <Repeat2 className="text-amber-500" size={20}/>
+                        {t('customTerms')}
+                    </h3>
+                    <button onClick={() => setIsTermsModalOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="p-6">
+                    <div className="flex gap-2 mb-4">
+                        <input 
+                            type="text" 
+                            placeholder={t('originalWord')} 
+                            value={newOriginal}
+                            onChange={(e) => setNewOriginal(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                        />
+                        <input 
+                            type="text" 
+                            placeholder={t('replacementWord')} 
+                            value={newReplacement}
+                            onChange={(e) => setNewReplacement(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                        />
+                        <button 
+                            onClick={handleAddTerm}
+                            disabled={!newOriginal.trim() || !newReplacement.trim()}
+                            className="p-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <Plus size={20} />
+                        </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                        {customTerms.length === 0 ? (
+                            <p className="text-center text-gray-400 py-4 text-sm">{t('noTermsAdded')}</p>
+                        ) : (
+                            customTerms.map(term => (
+                                <div key={term.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 animate-in slide-in-from-top-1">
+                                    <div className="flex items-center gap-3 text-sm">
+                                        <span className="text-red-500 font-medium">{term.original}</span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-500 font-bold">{term.replacement}</span>
+                                    </div>
+                                    <button onClick={() => handleRemoveTerm(term.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 

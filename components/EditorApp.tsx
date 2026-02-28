@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { UploadedFile, MergeMode, CropSubMode, OutputFormat, TranslationKey } from '../types';
 import { useLanguage } from './LanguageContext'; 
@@ -22,11 +23,15 @@ const EditorApp: React.FC = () => {
     const [separatorColor, setSeparatorColor] = useState('#FFFFFF');
     const [separatorHeight, setSeparatorHeight] = useState(10);
     const [maxHeightPixels, setMaxHeightPixels] = useState(8000);
+    const [quality, setQuality] = useState(90);
 
     const [allCropPoints, setAllCropPoints] = useState<Record<string, number[]>>({});
     const cropImageRef = useRef<HTMLImageElement>(null);
 
     const [isLoading, setIsLoading] = useState(false);
+    const [progress, setProgress] = useState(0); // حالة شريط التحميل
+    const [zipName, setZipName] = useState<string | null>(null); // لتخزين اسم الملف المضغوط الأصلي
+
     const [isZipping, setIsZipping] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dragOver, setDragOver] = useState(false);
@@ -45,6 +50,8 @@ const processFiles = async (files: File[]) => {
     for (const file of files) {
         // التحقق من ملف الـ ZIP
         if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+            // حفظ اسم الملف المضغوط بدون الامتداد
+            setZipName(file.name.replace(/\.[^/.]+$/, ""));
             try {
                 const zip = new JSZip();
                 const content = await zip.loadAsync(file);
@@ -112,6 +119,8 @@ const processFiles = async (files: File[]) => {
         setAllCropPoints({});
         setActiveFileIndex(0);
         setError(null);
+        setZipName(null);
+        setProgress(0);
     };
 
     const handleCropImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
@@ -140,8 +149,12 @@ const processFiles = async (files: File[]) => {
     const handleProcess = async () => {
         if (uploadedFiles.length === 0) return;
         setIsLoading(true);
+        setProgress(0);
         setError(null);
         setMergedImages([]);
+
+        // تأخير بسيط للسماح للواجهة بالتحديث
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
             const loadedImages = await Promise.all(
@@ -157,8 +170,17 @@ const processFiles = async (files: File[]) => {
 
             const generatedImages: string[] = [];
 
+            // Determine Quality based on Format
+            const qualityArgument = quality / 100;
+
             if (mergeMode === MergeMode.CROP) {
-                for (const item of loadedImages) {
+                for (let idx = 0; idx < loadedImages.length; idx++) {
+                    const item = loadedImages[idx];
+                    
+                    // تحديث شريط التقدم
+                    setProgress(Math.round(((idx + 1) / loadedImages.length) * 100));
+                    await new Promise(r => setTimeout(r, 0)); // السماح للـ UI بالتحديث
+
                     const points = allCropPoints[item.id];
                     if (!points || points.length === 0) continue;
                     const img = item.img;
@@ -173,7 +195,7 @@ const processFiles = async (files: File[]) => {
                             canvas.height = h;
                             const ctx = canvas.getContext('2d')!;
                             ctx.drawImage(img, 0, sortedPoints[i], img.width, h, 0, 0, img.width, h);
-                            generatedImages.push(canvas.toDataURL(outputFormat));
+                            generatedImages.push(canvas.toDataURL(outputFormat, qualityArgument));
                         }
                     } else {
                         const canvas = document.createElement('canvas');
@@ -199,7 +221,7 @@ const processFiles = async (files: File[]) => {
                             ctx.drawImage(img, 0, s.y, img.width, s.h, 0, drawY, img.width, s.h);
                             drawY += s.h;
                         });
-                        generatedImages.push(canvas.toDataURL(outputFormat));
+                        generatedImages.push(canvas.toDataURL(outputFormat, qualityArgument));
                     }
                 }
             } else if (mergeMode === MergeMode.PAGES) {
@@ -207,7 +229,13 @@ const processFiles = async (files: File[]) => {
                 for (let i = 0; i < loadedImages.length; i += pagesPerImage) {
                     chunks.push(loadedImages.slice(i, i + pagesPerImage).map(l => l.img));
                 }
-                for (const chunk of chunks) {
+                
+                for (let idx = 0; idx < chunks.length; idx++) {
+                    const chunk = chunks[idx];
+                    // تحديث شريط التقدم
+                    setProgress(Math.round(((idx + 1) / chunks.length) * 100));
+                    await new Promise(r => setTimeout(r, 0));
+
                     const canvas = document.createElement('canvas');
                     const maxWidth = Math.max(...chunk.map(img => img.width));
                     const totalHeight = chunk.reduce((sum, img) => sum + img.height, 0) + (Math.max(0, chunk.length - 1) * separatorHeight);
@@ -221,7 +249,7 @@ const processFiles = async (files: File[]) => {
                         ctx.drawImage(img, (maxWidth - img.width) / 2, y);
                         y += img.height + (idx < chunk.length - 1 ? separatorHeight : 0);
                     });
-                    generatedImages.push(canvas.toDataURL(outputFormat));
+                    generatedImages.push(canvas.toDataURL(outputFormat, qualityArgument));
                 }
             } else if (mergeMode === MergeMode.PIXELS) {
                 const maxWidth = Math.max(...loadedImages.map(l => l.img.width));
@@ -232,7 +260,13 @@ const processFiles = async (files: File[]) => {
                 ctx.fillStyle = separatorColor;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 let currentY = 0;
-                for (const item of loadedImages) {
+                
+                for (let idx = 0; idx < loadedImages.length; idx++) {
+                    const item = loadedImages[idx];
+                    // تحديث شريط التقدم (تقريبي بناءً على عدد الصور المعالجة)
+                    setProgress(Math.round(((idx + 1) / loadedImages.length) * 100));
+                    await new Promise(r => setTimeout(r, 0));
+
                     const img = item.img;
                     let srcY = 0;
                     while (srcY < img.height) {
@@ -240,7 +274,7 @@ const processFiles = async (files: File[]) => {
                         ctx.drawImage(img, 0, srcY, img.width, h, (maxWidth - img.width) / 2, currentY, img.width, h);
                         currentY += h; srcY += h;
                         if (currentY >= maxHeightPixels) {
-                            generatedImages.push(canvas.toDataURL(outputFormat));
+                            generatedImages.push(canvas.toDataURL(outputFormat, qualityArgument));
                             currentY = 0;
                             canvas = document.createElement('canvas');
                             canvas.width = maxWidth; canvas.height = maxHeightPixels;
@@ -253,11 +287,18 @@ const processFiles = async (files: File[]) => {
                 if (currentY > 0) {
                     const final = document.createElement('canvas');
                     final.width = maxWidth; final.height = currentY;
-                    final.getContext('2d')!.drawImage(canvas, 0, 0, maxWidth, currentY, 0, 0, maxWidth, currentY);
-                    generatedImages.push(final.toDataURL(outputFormat));
+                    const fctx = final.getContext('2d')!;
+                    // Fill background for transparency safety in JPEG
+                    if (outputFormat === OutputFormat.JPEG) {
+                        fctx.fillStyle = separatorColor;
+                        fctx.fillRect(0, 0, final.width, final.height);
+                    }
+                    fctx.drawImage(canvas, 0, 0, maxWidth, currentY, 0, 0, maxWidth, currentY);
+                    generatedImages.push(final.toDataURL(outputFormat, qualityArgument));
                 }
             }
             setMergedImages(generatedImages);
+            setProgress(100);
         } catch (err) {
             setError(err instanceof Error ? err.message : t('errorLoadingImages' as TranslationKey));
         } finally {
@@ -271,14 +312,25 @@ const processFiles = async (files: File[]) => {
         try {
             const zip = new JSZip();
             const ext = getFormatExtension();
+            
             mergedImages.forEach((imgSrc, index) => {
                 const base64Data = imgSrc.split(',')[1];
-                zip.file(`output-${index + 1}.${ext}`, base64Data, { base64: true });
+                // تسمية الصور بـ V-01, V-02 ...
+                const fileName = `V-${(index + 1).toString().padStart(2, '0')}.${ext}`;
+                zip.file(fileName, base64Data, { base64: true });
             });
+            
             const content = await zip.generateAsync({ type: 'blob' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(content);
-            link.download = `manga-export-${Date.now()}.zip`;
+            
+            // تسمية الملف المضغوط النهائي
+            let zipFilename = 'MTBMV.zip';
+            if (zipName) {
+                zipFilename = `${zipName}-MT.zip`;
+            }
+            
+            link.download = zipFilename;
             link.click();
             URL.revokeObjectURL(link.href);
         } catch (err) {
@@ -361,6 +413,28 @@ const processFiles = async (files: File[]) => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Image Quality */}
+                            {(outputFormat === OutputFormat.JPEG || outputFormat === OutputFormat.WEBP) && (
+                                <div className="animate-in slide-in-from-top-2 duration-300">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-[11px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">
+                                            {language === 'ar' ? 'الجودة' : 'Quality'}
+                                        </label>
+                                        <span className="text-[11px] font-black text-brand-500">{quality}%</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <Settings2 size={14} className="text-slate-400" />
+                                        <input 
+                                            type="range" 
+                                            min="1" max="100" 
+                                            value={quality} 
+                                            onChange={e => setQuality(parseInt(e.target.value))} 
+                                            className="w-full h-2 bg-gray-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-600" 
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Specific Controls for Pages Mode */}
                             {mergeMode === MergeMode.PAGES && (
@@ -591,6 +665,25 @@ const processFiles = async (files: File[]) => {
                         )}
                     </div>
 
+                    {/* Progress Bar Section (Visible only when loading) */}
+                    {isLoading && (
+                        <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl border border-gray-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
+                            <div className="flex justify-between items-end mb-2">
+                                <div className="flex items-center gap-3">
+                                    <Loader2 className="w-5 h-5 text-brand-600 dark:text-brand-400 animate-spin" />
+                                    <span className="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">{t('merging' as TranslationKey)}...</span>
+                                </div>
+                                <span className="text-2xl font-black text-brand-600 dark:text-brand-400">{progress}%</span>
+                            </div>
+                            <div className="h-4 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner border border-gray-200 dark:border-slate-700">
+                                <div 
+                                    className="h-full bg-gradient-to-r from-brand-500 to-purple-600 rounded-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(14,165,233,0.5)]"
+                                    style={{ width: `${progress}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Results Panel */}
                     <section className="bg-white dark:bg-slate-900/50 backdrop-blur-xl rounded-[2.5rem] shadow-2xl p-8 border border-gray-100 dark:border-slate-800">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
@@ -620,16 +713,10 @@ const processFiles = async (files: File[]) => {
                         )}
 
                         {isLoading ? (
-                            <div className="flex flex-col items-center py-32 gap-6 bg-slate-50/30 dark:bg-slate-950/20 rounded-[2rem]">
-                                <div className="relative">
-                                    <div className="w-20 h-20 border-[6px] border-brand-100 dark:border-slate-800 border-t-brand-600 rounded-full animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center text-brand-600">
-                                        <Layers size={24} />
-                                    </div>
-                                </div>
+                            <div className="flex flex-col items-center py-20 gap-6 opacity-50">
+                                {/* تم استبدال المحتوى السابق بشريط التقدم في الأعلى، هنا نبقي مساحة بسيطة أو فارغة للحفاظ على التنسيق */}
                                 <div className="text-center">
-                                    <p className="text-lg font-black text-brand-600 dark:text-brand-400 animate-pulse tracking-widest uppercase">{t('merging' as TranslationKey)}</p>
-                                    <p className="text-xs text-slate-400 mt-2 font-medium">{language === 'ar' ? 'يرجى الانتظار قليلاً...' : 'Please wait a moment...'}</p>
+                                    <p className="text-xs text-slate-400 font-medium animate-pulse">{language === 'ar' ? 'جاري المعالجة، يرجى الانتظار...' : 'Processing, please wait...'}</p>
                                 </div>
                             </div>
                         ) : mergedImages.length > 0 ? (
@@ -647,7 +734,7 @@ const processFiles = async (files: File[]) => {
                                         <div className="flex flex-col sm:flex-row gap-4 items-center">
                                             <a 
                                                 href={imgSrc} 
-                                                download={`result-${index + 1}.${getFormatExtension()}`} 
+                                                download={`V-${(index + 1).toString().padStart(2, '0')}.${getFormatExtension()}`} 
                                                 className="flex-1 w-full flex items-center justify-center gap-3 bg-brand-600 text-white font-black py-4.5 px-10 rounded-2xl hover:bg-brand-700 transition-all shadow-xl shadow-brand-500/20 text-sm uppercase tracking-widest"
                                             >
                                                 <DownloadIcon className="w-5 h-5"/>
@@ -657,7 +744,7 @@ const processFiles = async (files: File[]) => {
                                                 onClick={() => {
                                                     const link = document.createElement('a');
                                                     link.href = imgSrc;
-                                                    link.download = `manga-page-${index+1}.${getFormatExtension()}`;
+                                                    link.download = `V-${(index + 1).toString().padStart(2, '0')}.${getFormatExtension()}`;
                                                     link.click();
                                                 }}
                                                 className="w-14 h-14 flex items-center justify-center bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl text-slate-400 hover:text-brand-500 hover:border-brand-500 transition-all shadow-md group/btn"

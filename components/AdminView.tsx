@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Search, Calendar, Clock, CreditCard, Coins, User, Loader2, Shield, Lock, History, Hourglass, PlusCircle, MinusCircle, Crown, Trash2, X, Check, Activity, TrendingUp, RotateCcw, MessageSquare, Save, Receipt, Banknote, CheckCircle } from 'lucide-react';
+import { Search, Calendar, Clock, CreditCard, Coins, User, Loader2, Shield, Lock, History, Hourglass, PlusCircle, MinusCircle, Crown, Trash2, X, Check, Activity, TrendingUp, RotateCcw, MessageSquare, Save, Receipt, Banknote, CheckCircle, Link as LinkIcon, Gift, Copy, Megaphone, Key } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { Link } from 'react-router-dom';
 import { useLanguage } from './LanguageContext';
@@ -16,6 +16,8 @@ interface UserData {
   last_seen: string | null;
   subscription_expires_at: string | null;
   subscription_start_at?: string | null;
+  name?: string | null;
+  profile_image?: string | null;
 }
 
 interface SystemStats {
@@ -50,6 +52,21 @@ interface UserListCardProps {
 
 type ActionModalType = 'addPoints' | 'deductPoints' | 'addSub' | null;
 
+const SHORTENERS = {
+  cut4money: {
+    url: 'https://cut4money.com/api',
+    token: '2bc6b73d12f7df3e4db8b9e3c73d3518931f2883'
+  },
+  nitro: {
+    url: 'https://nitro-link.com/api',
+    token: 'cc954ca1139e9dc5f4bb47f09bbd8bd4f68e5def'
+  },
+  swiftlnx: {
+    url: 'https://swiftlnx.com/api',
+    token: '399a3726814280bc2b636ab5225ed7c297ed442f'
+  }
+};
+
 export const AdminView: React.FC = () => {
   const { user } = useAuth();
   const { t, language } = useLanguage();
@@ -66,11 +83,22 @@ export const AdminView: React.FC = () => {
   const [discordInput, setDiscordInput] = useState('');
   const [isUpdatingDiscord, setIsUpdatingDiscord] = useState(false);
 
+  // API Messages States
+  const [apiMessageData, setApiMessageData] = useState<{ api: string; message: boolean; title: string; main_message: string } | null>(null);
+  const [isUpdatingApiMessage, setIsUpdatingApiMessage] = useState(false);
+
   // Payment Requests States
   const [pendingPayments, setPendingPayments] = useState<PaymentRequest[]>([]);
   const [passedPaymentsCount, setPassedPaymentsCount] = useState<number>(0);
   const [showPaymentsModal, setShowPaymentsModal] = useState(false);
   const [processingPaymentId, setProcessingPaymentId] = useState<number | null>(null);
+
+  // Reward Links State
+  const [rewardCoins, setRewardCoins] = useState(2);
+  const [rewardDuration, setRewardDuration] = useState(3);
+  const [selectedShortener, setSelectedShortener] = useState<keyof typeof SHORTENERS>('cut4money');
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
 
   // States for Action Modals
   const [actionModal, setActionModal] = useState<ActionModalType>(null);
@@ -111,6 +139,7 @@ export const AdminView: React.FC = () => {
       fetchUsers();
       fetchSystemStats();
       fetchPaymentsData();
+      fetchApiMessageData();
     } else if (!roleLoading) {
       setLoading(false);
     }
@@ -167,6 +196,22 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const fetchApiMessageData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('api_messages')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (data) {
+        setApiMessageData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching api message data:', err);
+    }
+  };
+
   const fetchPaymentsData = async () => {
     try {
       // Fetch Pending Payments
@@ -191,6 +236,111 @@ export const AdminView: React.FC = () => {
       }
     } catch (e) {
       console.error('Error fetching payments:', e);
+    }
+  };
+
+  const handleUpdateApiMessage = async () => {
+    if (!apiMessageData) return;
+    setIsUpdatingApiMessage(true);
+    try {
+      const { error } = await supabase
+        .from('api_messages')
+        .update({
+          title: apiMessageData.title,
+          main_message: apiMessageData.main_message,
+          message: apiMessageData.message,
+          api: apiMessageData.api
+        })
+        .eq('id', 1);
+
+      if (error) throw error;
+      alert(language === 'ar' ? 'تم تحديث الإعدادات بنجاح!' : 'Settings updated successfully!');
+    } catch (e) {
+      console.error("Failed to update api message:", e);
+      alert(t('adminError'));
+    } finally {
+      setIsUpdatingApiMessage(false);
+    }
+  };
+
+  // --- Reward Links Logic ---
+  const generateRandomSlug = (length = 12) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  const handleGenerateLink = async () => {
+    setIsGeneratingLink(true);
+    setGeneratedLink(null);
+    try {
+      const slug = generateRandomSlug();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + rewardDuration);
+
+      // 1. Insert into Supabase
+      const { error } = await supabase
+        .from('offers')
+        .insert({
+          slug,
+          coins_amount: rewardCoins,
+          expires_at: expiresAt.toISOString(),
+          active: true
+        });
+
+      if (error) throw error;
+
+      // 2. Shorten Link
+      const targetUrl = `https://master-translation.netlify.app/free-coins/${slug}`;
+      const service = SHORTENERS[selectedShortener];
+      const apiUrl = `${service.url}?api=${service.token}&url=${encodeURIComponent(targetUrl)}`;
+
+      try {
+        const response = await fetch(apiUrl);
+        let rawResponse = await response.text();
+        
+        // Clean up response (trim whitespace)
+        rawResponse = rawResponse.trim();
+
+        // Attempt to parse if it's JSON (some APIs return JSON on error or success)
+        try {
+            const json = JSON.parse(rawResponse);
+            if (json.shortenedUrl) {
+                rawResponse = json.shortenedUrl;
+            } else if (json.url) {
+                rawResponse = json.url;
+            }
+        } catch (e) {
+            // Not JSON, assume plain text
+        }
+
+        // Basic check if response looks like a URL
+        if (rawResponse.startsWith('http')) {
+           setGeneratedLink(rawResponse);
+           
+           // Optionally update db with short link for record keeping
+           await supabase.from('offers').update({ short_link: rawResponse }).eq('slug', slug);
+        } else {
+           console.error("Shortener API Unexpected Response:", rawResponse);
+           // Even if it failed, show the fallback link so the admin isn't blocked
+           alert("Link generated, but auto-shortening service returned: " + rawResponse.substring(0, 50));
+           setGeneratedLink(targetUrl); 
+        }
+      } catch (shortenErr) {
+        console.error("Fetch Error:", shortenErr);
+        // Fallback if fetch fails (e.g. CORS)
+        setGeneratedLink(targetUrl);
+        alert("Link generated but auto-shortening failed (CORS or Network). Copy and shorten manually.");
+      }
+
+    } catch (e: any) {
+      console.error("Failed to generate offer", e);
+      alert(t('adminError') + ": " + e.message);
+    } finally {
+      setIsGeneratingLink(false);
     }
   };
 
@@ -575,12 +725,16 @@ export const AdminView: React.FC = () => {
               <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
                 <div className="bg-brand-600 p-6 text-white">
                   <div className="flex items-center space-x-4 rtl:space-x-reverse">
-                    <div className="p-3 bg-white/20 rounded-full backdrop-blur-sm">
-                      <User className="w-8 h-8 text-white" />
+                    <div className="p-1 bg-white/20 rounded-full backdrop-blur-sm overflow-hidden w-16 h-16 flex items-center justify-center">
+                      {selectedUser.profile_image ? (
+                        <img src={selectedUser.profile_image} alt="User" className="w-full h-full object-cover rounded-full" />
+                      ) : (
+                        <User className="w-8 h-8 text-white" />
+                      )}
                     </div>
                     <div>
-                      <h3 className="text-2xl font-bold">{selectedUser.email}</h3>
-                      <p className="text-brand-100 text-sm opacity-90">ID: {selectedUser.id}</p>
+                      <h3 className="text-2xl font-bold">{selectedUser.name || t('guestUser')}</h3>
+                      <p className="text-brand-100 text-sm opacity-90">{selectedUser.email}</p>
                     </div>
                   </div>
                 </div>
@@ -732,6 +886,78 @@ export const AdminView: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* === Reward Links Generator Section === */}
+          <div className="max-w-3xl mx-auto mb-12">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-800 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <Gift className="w-6 h-6 text-pink-500" />
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('createReward')}</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('coinsAmount')}</label>
+                  <input
+                    type="number"
+                    value={rewardCoins}
+                    onChange={(e) => setRewardCoins(Number(e.target.value))}
+                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-pink-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('durationDays')}</label>
+                  <input
+                    type="number"
+                    value={rewardDuration}
+                    onChange={(e) => setRewardDuration(Number(e.target.value))}
+                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-pink-500 outline-none"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('shortenerService')}</label>
+                  <select
+                    value={selectedShortener}
+                    onChange={(e) => setSelectedShortener(e.target.value as keyof typeof SHORTENERS)}
+                    className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-pink-500 outline-none"
+                  >
+                    <option value="cut4money">Cut4Money</option>
+                    <option value="nitro">Nitro</option>
+                    <option value="swiftlnx">SwiftLnx</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={handleGenerateLink}
+                disabled={isGeneratingLink}
+                className="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl shadow-lg shadow-pink-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isGeneratingLink ? <Loader2 size={20} className="animate-spin" /> : <LinkIcon size={20} />}
+                {t('generateLink')}
+              </button>
+
+              {generatedLink && (
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 animate-in fade-in">
+                  <p className="text-sm font-medium text-gray-500 mb-2">{t('shortenedLink')}:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedLink}
+                      className="flex-1 p-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-mono text-pink-600"
+                    />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(generatedLink)}
+                      className="p-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
+                    >
+                      <Copy size={18} className="text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* === PENDING PAYMENTS NOTIFICATION BAR === */}
@@ -907,7 +1133,7 @@ export const AdminView: React.FC = () => {
               </div>
 
               {/* Discord Settings */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-gray-100 dark:border-slate-800 p-6 flex flex-col sm:flex-row items-center gap-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-gray-100 dark:border-slate-800 p-6 flex flex-col sm:flex-row items-center gap-6 mb-8">
                 <div className="flex items-center gap-4 w-full sm:w-auto">
                   <div className="p-3 bg-[#5865F2]/10 text-[#5865F2] rounded-xl">
                     <MessageSquare size={24} />
@@ -936,6 +1162,86 @@ export const AdminView: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* API Messages & Global Popup Settings */}
+              {apiMessageData && (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 p-8 animate-in fade-in duration-500">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="p-3 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-2xl">
+                      <Megaphone size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white">إعدادات الرسالة العامة والـ API</h3>
+                      <p className="text-sm text-gray-500">تحكم في الرسالة التي تظهر لجميع المستخدمين ومفتاح OpenRouter.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${apiMessageData.message ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                          حالة الرسالة (تفعيل/تعطيل)
+                        </label>
+                        <button
+                          onClick={() => setApiMessageData({...apiMessageData, message: !apiMessageData.message})}
+                          className={`w-full py-3 px-4 rounded-xl font-bold transition-all border-2 flex items-center justify-center gap-2 ${
+                            apiMessageData.message 
+                              ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400' 
+                              : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400'
+                          }`}
+                        >
+                          {apiMessageData.message ? <Check size={18}/> : <X size={18}/>}
+                          {apiMessageData.message ? 'الرسالة نشطة الآن' : 'الرسالة معطلة الآن'}
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                          <Key size={16} className="text-amber-500" />
+                          مفتاح OpenRouter API
+                        </label>
+                        <input
+                          type="text"
+                          value={apiMessageData.api}
+                          onChange={(e) => setApiMessageData({...apiMessageData, api: e.target.value})}
+                          placeholder="sk-or-v1-..."
+                          className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-brand-500 outline-none text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-700 dark:text-gray-300">عنوان الرسالة (Title)</label>
+                      <input
+                        type="text"
+                        value={apiMessageData.title}
+                        onChange={(e) => setApiMessageData({...apiMessageData, title: e.target.value})}
+                        className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-brand-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-700 dark:text-gray-300">محتوى الرسالة الأساسي (Main Message)</label>
+                      <textarea
+                        rows={4}
+                        value={apiMessageData.main_message}
+                        onChange={(e) => setApiMessageData({...apiMessageData, main_message: e.target.value})}
+                        className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 focus:ring-2 focus:ring-brand-500 outline-none resize-none custom-scrollbar"
+                      ></textarea>
+                    </div>
+
+                    <button
+                      onClick={handleUpdateApiMessage}
+                      disabled={isUpdatingApiMessage}
+                      className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white font-black rounded-2xl shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isUpdatingApiMessage ? <Loader2 size={24} className="animate-spin" /> : <Save size={24} />}
+                      حفظ إعدادات الرسالة والـ API
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

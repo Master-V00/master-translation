@@ -14,6 +14,26 @@ export interface UploadedImage {
   cooldownEndsAt?: number;
 }
 
+export interface MangaImage {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+}
+
+export interface HistoryItem {
+  fileName: string;
+  extracted: string;
+  translated: string;
+}
+
+export interface HistoryEntry {
+  id: string;
+  title: string;
+  date: string;
+  items: HistoryItem[];
+}
+
 export interface ThemeContextType {
   isDark: boolean;
   toggleTheme: () => void;
@@ -73,4 +93,20 @@ export interface SymbolSet {
   name: string;
   symbols: Record<string, string>;
   createdAt: number;
+}
+
+export interface Offer {
+  id: string;
+  slug: string;
+  coins_amount: number;
+  active: boolean;
+  expires_at: string;
+  created_at: string;
+  short_link?: string;
+}
+
+export interface TermReplacement {
+  id: string;
+  original: string;
+  replacement: string;
 }

@@ -1,20 +1,23 @@
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ThemeContextType } from '../types';
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true); // Default to true (Dark) initially
 
   useEffect(() => {
-    // Check local storage or system preference on mount
+    // Check local storage
     const storedTheme = localStorage.getItem('theme');
-    if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      setIsDark(true);
-      document.documentElement.classList.add('dark');
-    } else {
+    
+    // If stored is 'light', switch to light. Otherwise (stored is 'dark' or null), stay dark.
+    if (storedTheme === 'light') {
       setIsDark(false);
       document.documentElement.classList.remove('dark');
+    } else {
+      setIsDark(true);
+      document.documentElement.classList.add('dark');
     }
   }, []);
 
