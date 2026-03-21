@@ -107,7 +107,7 @@ export const SupportView: React.FC = () => {
 
       <div className="text-center">
         <p className="text-sm text-slate-400 font-medium">
-          {language === 'ar' ? 'ساعات العمل: 24/10 عبر تذاكر العم في ديسكورد' : 'Working hours: 24/10 via support tickets on Discord'}
+          {language === 'ar' ? 'ساعات العمل: 24/10 عبر تذاكر الدعم في ديسكورد' : 'Working hours: 24/10 via support tickets on Discord'}
         </p>
       </div>
     </div>

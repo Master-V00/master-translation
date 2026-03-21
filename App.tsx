@@ -20,6 +20,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import EditorApp from './components/EditorApp'; // ملف App بتاع المشروع الفرعي
 import { CoverDesignView } from './components/CoverDesignView';
 import { MangaReaderView } from './components/MangaReaderView';
+import ChapterScraperView from './components/ChapterScraperView';
 import { X, Megaphone } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -105,6 +106,7 @@ const AppContent: React.FC = () => {
               <Route path="/merger" element={<EditorApp />} />
               <Route path="/cover-design" element={<CoverDesignView />} />
               <Route path="/viewer-manga" element={<MangaReaderView />} />
+              <Route path="/scraper" element={<ChapterScraperView />} />
               <Route path="/history" element={<HistoryView />} />
               <Route path="/support" element={<SupportView />} />
               <Route path="/earn" element={<EarnCoinsView />} />

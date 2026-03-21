@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { 
   Upload, 
   Trash2, 
-  ExternalLink, 
   AlertCircle,
   Loader2,
   ChevronUp,
@@ -43,7 +42,8 @@ export const MangaReaderView: React.FC = () => {
     return null;
   };
 
-  const getDirectFileLink = (id: string) => `https://drive.google.com/uc?export=view&id=${id}`;
+  const getDirectFileLink = (id: string) =>
+  `https://lh3.googleusercontent.com/d/${id}`;
 
   const processFiles = async (files: FileList | File[]) => {
     setLoading(true);
@@ -126,42 +126,31 @@ export const MangaReaderView: React.FC = () => {
       return;
     }
 
+    if (driveInfo.type === 'folder') {
+      setError(language === 'ar' 
+        ? 'لا يمكن جلب محتويات المجلد بدون API. يرجى إدخال روابط الملفات الفردية أو رفع ملف ZIP.' 
+        : 'Cannot fetch folder contents without API. Please enter individual file links or upload a ZIP file.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    if (driveInfo.type === 'folder') {
-      try {
-        // Attempt to fetch folder contents by downloading it as a ZIP
-        // Note: This often hits CORS issues unless a proxy is used or it's a very specific public direct link.
-        // We attempt it as requested.
-        const zipUrl = `https://drive.google.com/uc?id=${driveInfo.id}&export=download`;
-        const response = await fetch(zipUrl);
-        
-        if (!response.ok) throw new Error("CORS_OR_PRIVATE");
-
-        const blob = await response.blob();
-        const zipFile = new File([blob], "drive_folder.zip", { type: "application/zip" });
-        await processFiles([zipFile]);
-        setDriveUrl('');
-      } catch (err) {
-        setError(language === 'ar' 
-          ? 'لا يمكن تحميل المجلد مباشرة بسبب قيود جوجل (CORS) أو لأن المجلد خاص. يرجى رفع ملف ZIP يدوياً أو استخدام روابط الصور المنفردة.' 
-          : 'Cannot download folder directly due to Google restrictions (CORS) or the folder is private. Please upload a ZIP file manually or use individual image links.');
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // It's a file
+    try {
       const directUrl = getDirectFileLink(driveInfo.id);
       const newImage: MangaImage = {
         id: crypto.randomUUID(),
-        name: `Google Drive Image - ${driveUrl.substring(0, 20)}...`,
+        name: `Google Drive Image - ${driveInfo.id.substring(0, 8)}`,
         url: directUrl,
         size: 0,
       };
 
       setImages(prev => [...prev, newImage]);
       setDriveUrl('');
+    } catch (err) {
+      console.error("Drive link error:", err);
+      setError(language === 'ar' ? 'فشل إضافة الرابط.' : 'Failed to add link.');
+    } finally {
       setLoading(false);
     }
   };

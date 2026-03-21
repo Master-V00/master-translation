@@ -56,14 +56,7 @@ export const translateMangaPage = async (
   let rulesList = "";
 
   if (typeof symbols === 'string') {
-    try {
-      customSymbols = JSON.parse(symbols);
-      rulesList = Object.entries(customSymbols)
-        .map(([k, v]) => `${k} [Text] -> ${v}`)
-        .join('\n    ');
-    } catch (e) {
-      console.error("Error parsing symbols", e);
-    }
+    rulesList = symbols;
 
     symbolRules = `
     CUSTOM FORMATTING RULES (STRICT):
@@ -71,9 +64,6 @@ export const translateMangaPage = async (
     DO NOT wrap the text with the symbol if it is not specified.
     
     ${rulesList}
-    
-    Examples of usage based on your provided keys:
-    ${Object.keys(customSymbols)[0] || 'Example'}: Hello World
     `;
   } else {
     // Default Rules

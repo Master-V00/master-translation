@@ -4,7 +4,7 @@ import { ResultCard } from './ResultCard';
 import { UploadedImage, TargetLanguage, TermReplacement, HistoryEntry } from '../types';
 import { translateMangaPage } from '../services/geminiService';
 import { useLanguage } from './LanguageContext';
-import { Upload, Image as ImageIcon, Sparkles, Copy, Play, Trash2, Languages, FileText, Quote, ChevronUp, ChevronDown, Repeat2, Plus, X } from 'lucide-react';
+import { Upload, Image as ImageIcon, Sparkles, Copy, Play, Trash2, Languages, FileText, Quote, ChevronUp, ChevronDown, Repeat2, Plus, X, Square } from 'lucide-react';
 import JSZip from 'jszip';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -62,6 +62,7 @@ export const HomeView: React.FC = () => {
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
+  const [pendingHistorySave, setPendingHistorySave] = useState(false);
   const requestTimestampsRef = useRef<number[]>([]);
   const balanceRef = useRef(balance);
 
@@ -73,6 +74,13 @@ export const HomeView: React.FC = () => {
   useEffect(() => {
     balanceRef.current = balance;
   }, [balance]);
+
+  useEffect(() => {
+    if (pendingHistorySave && !isQueueRunning) {
+      saveToHistory();
+      setPendingHistorySave(false);
+    }
+  }, [pendingHistorySave, isQueueRunning]);
 
   const handleAddTerm = () => {
     if (newOriginal.trim() && newReplacement.trim()) {
@@ -173,9 +181,7 @@ export const HomeView: React.FC = () => {
 
     isProcessingRef.current = false;
     setIsQueueRunning(false);
-    
-    // حفظ في السجل بعد انتهاء الطابور
-    saveToHistory();
+    setPendingHistorySave(true);
   };
 
   const processImage = async (id: string) => {
@@ -414,6 +420,11 @@ export const HomeView: React.FC = () => {
     }
   };
 
+  const handleStop = () => {
+    queueRef.current = [];
+    setImages(prev => prev.map(img => img.status === 'queued' ? { ...img, status: 'idle' } : img));
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 animate-in fade-in duration-300">
       
@@ -453,6 +464,16 @@ export const HomeView: React.FC = () => {
                 <Trash2 size={16} />
                 <span>{t('clear')}</span>
               </button>
+
+              {isQueueRunning && (
+                <button
+                  onClick={handleStop}
+                  className="flex items-center space-x-2 rtl:space-x-reverse px-4 py-2 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30 transition-colors font-medium text-sm border border-orange-200 dark:border-orange-800"
+                >
+                  <Square size={16} fill="currentColor" />
+                  <span>{t('stop')}</span>
+                </button>
+              )}
 
             {/* Custom Terms Button */}
             <button

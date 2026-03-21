@@ -36,6 +36,13 @@ export const HistoryView: React.FC = () => {
     }
   };
 
+  const clearAllHistory = () => {
+    if (window.confirm(language === 'ar' ? 'هل أنت متأكد من حذف جميع السجلات؟' : 'Are you sure you want to delete all history?')) {
+      saveHistory([]);
+      setSelectedBatch(null);
+    }
+  };
+
   const startEditing = (entry: HistoryEntry) => {
     setEditingId(entry.id);
     setEditValue(entry.title);
@@ -139,10 +146,19 @@ export const HistoryView: React.FC = () => {
         <div className="p-3 bg-brand-100 dark:bg-brand-900/30 rounded-2xl text-brand-600 dark:text-brand-400">
           <History size={32} />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-3xl font-black text-slate-900 dark:text-white font-[Cairo]">{t('historyTitle')}</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm">{t('historySubtitle')}</p>
         </div>
+        {history.length > 0 && (
+          <button 
+            onClick={clearAllHistory}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 rounded-xl transition-all font-bold text-sm"
+          >
+            <Trash2 size={18} />
+            <span className="hidden sm:inline">{t('clearAll')}</span>
+          </button>
+        )}
       </div>
 
       {history.length === 0 ? (
