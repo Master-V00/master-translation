@@ -50,8 +50,8 @@ export const SupportView: React.FC = () => {
           
           <div className="flex items-center gap-4 mb-8">
             <div className="flex -space-x-3 rtl:space-x-reverse">
-              <img src="/logo.png" alt="Logo" className="w-14 h-14 rounded-2xl object-contain bg-white dark:bg-slate-900 p-1 shadow-lg z-10 border-2 border-white dark:border-slate-900" />
-              <img src="/discord.png" alt="Discord" className="w-14 h-14 rounded-2xl object-contain bg-[#5865F2] p-2 shadow-lg z-0 border-2 border-white dark:border-slate-900" />
+              <img src={import.meta.env.BASE_URL + 'logo.png'} alt="Logo" className="w-14 h-14 rounded-2xl object-contain bg-white dark:bg-slate-900 p-1 shadow-lg z-10 border-2 border-white dark:border-slate-900" />
+              <img src={import.meta.env.BASE_URL + 'discord.png'} alt="Discord" className="w-14 h-14 rounded-2xl object-contain bg-[#5865F2] p-2 shadow-lg z-0 border-2 border-white dark:border-slate-900" />
             </div>
           </div>
 

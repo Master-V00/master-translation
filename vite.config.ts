@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
     
     return {
       // تحديد الـ root لأنه مفيش مجشلد src
-      root: '.', 
+      root: '.',
+      base: '/master-translation/',
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -21,10 +22,10 @@ export default defineConfig(({ mode }) => {
       define: {
         // تأكد إن الأسماء دي هي اللي بتستخدمها في الكود فعلاً
         // Fix: Explicitly define environment variables for process.env access in the frontend
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),
-        'process.env.VITE_SUPABASE_SERVICE_ROLE_KEY': JSON.stringify(env.VITE_SUPABASE_SERVICE_ROLE_KEY),
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY ?? ''),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY ?? ''),
+        'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
+        'process.env.VITE_SUPABASE_SERVICE_ROLE_KEY': JSON.stringify(env.VITE_SUPABASE_SERVICE_ROLE_KEY ?? ''),
       },
       resolve: {
         alias: {

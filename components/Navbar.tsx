@@ -35,7 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({ toggleSidebar }) => {
 
               {/* Branding (Logo + Title) */}
               <div className="flex items-center space-x-2 sm:space-x-3 rtl:space-x-reverse min-w-0">
-                <img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-lg flex-shrink-0 object-contain" />
+                <img src={import.meta.env.BASE_URL + 'logo.png'} alt="Logo" className="w-8 h-8 rounded-lg flex-shrink-0 object-contain" />
                 <span className="text-lg sm:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400 font-[Cairo] tracking-wide truncate">
                   {t('appTitle')}
                 </span>

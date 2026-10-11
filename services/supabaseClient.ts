@@ -6,5 +6,10 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (process.env as any).VITE_SUPABASE_URL;
 const supabaseAnonKey = (process.env as any).VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Static-preview guard: createClient throws on empty URL/key, which would
+// crash the whole app on hosts without backend env (e.g. GitHub Pages demo).
+// Real deployments must set VITE_SUPABASE_URL + VITE_SUPABASE_SERVICE_ROLE_KEY.
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-preview-key'
+);

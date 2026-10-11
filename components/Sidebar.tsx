@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
         {/* Header */}
         <div className={`flex items-center h-16 px-4 border-b border-gray-200 dark:border-slate-800 justify-between`}>
            <div className="flex items-center gap-2">
-             <img src="/logo.png" alt="MT" className="w-8 h-8 rounded-lg object-contain" />
+             <img src={import.meta.env.BASE_URL + 'logo.png'} alt="MT" className="w-8 h-8 rounded-lg object-contain" />
              <span className="font-bold text-xl text-brand-600 dark:text-brand-400 font-[Cairo]">MT</span>
            </div>
            <button
@@ -158,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
               <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-500"></div>
               
               <div className="flex items-center gap-3 mb-3">
-                <img src="/discord.png" alt="Discord" className="w-10 h-10 object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-300" />
+                <img src={import.meta.env.BASE_URL + 'discord.png'} alt="Discord" className="w-10 h-10 object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-300" />
                 <h4 className="text-sm font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">{t('navSupport')}</h4>
               </div>
               
