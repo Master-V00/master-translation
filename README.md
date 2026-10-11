@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Open_App-success?logo=githubpages&logoColor=white)](https://masterv00-hub.github.io/master-translation/)
 
-### ▶️ [افتح التطبيق مباشرة — Open Live App](https://masterv00-hub.github.io/master-translation/)
+### ▶️ [افتح التطبيق مباشرة — Open Live App](https://Master-V00.github.io/master-translation/)
 
 **ترجم صفحات المانجا والمانهوا بين العربية والإنجليزية بالذكاء الاصطناعي، مع حسابات ومكافآت ومتجر.**
 
