@@ -48,7 +48,8 @@
 - ✂️ محرر دمج الفصول (manga merger editor) وقارئ مانجا مدمج
 - 🎨 تصميم أغلفة وأدوات رموز مخصصة
 - 👤 حسابات ومصادقة، ملف شخصي، سجل نشاط
-- 🪙 عملات ومكافآت يومية ومتجر وخطط اشتراك
+- 🪙 عملات ومكافآت يومية ومهام ربح مجانية
+- 🔑 نافذة بدء التشغيل لإدخال مفتاح Gemini الخاص بك والترجمة فوراً من جهازك
 - 🛠️ لوحة إدارة (مستخدمون، رسائل عامة، إعدادات)
 - 🌍 واجهة عربية/إنجليزية كاملة مع دعم RTL وداكن/فاتح
 
@@ -138,7 +139,8 @@ master-translation/
 - ✂️ Chapter merger editor + built-in manga reader
 - 🎨 Cover designer + custom symbol tools
 - 👤 Auth, profiles, activity history
-- 🪙 Coins, daily rewards, store, subscription plans
+- 🪙 Coins, daily rewards and free earning tasks
+- 🔑 Startup popup for your own Gemini key — translate instantly from your device
 - 🛠️ Admin dashboard (users, global messages, settings)
 - 🌍 Full Arabic/English UI with RTL + dark/light mode
 

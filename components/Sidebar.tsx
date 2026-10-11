@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Home, User, ShoppingBag, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard, MessageSquare, LifeBuoy, Gift, BookOpen, Scissors, History, Globe } from 'lucide-react';
+import { Home, User, LogOut, ArrowLeftFromLine, LogIn, LayoutDashboard, MessageSquare, LifeBuoy, Gift, BookOpen, Scissors, History, Globe } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 import { useAuth } from './AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -16,7 +16,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
   const { user, signOut, last_seen } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [discordLink, setDiscordLink] = useState<string>('#');
+  const [discordLink, setDiscordLink] = useState<string>('https://discord.gg/jNn6Rkf2uc');
 
   useEffect(() => {
     const fetchSystemStats = async () => {
@@ -72,7 +72,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
   const navItems = [
     { path: '/', icon: Home, label: t('navHome') },
     { path: '/profile', icon: User, label: t('navProfile') },
-    { path: '/shop', icon: ShoppingBag, label: t('navStore') },
     { path: '/earn', icon: Gift, label: t('navEarn') },
     { path: '/viewer-manga', icon: BookOpen, label: t('navMangaReader') },
     { path: '/scraper', icon: Globe, label: t('navScraper') },
@@ -131,7 +130,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar }) => {
         <div className="flex-1 py-6 flex flex-col gap-2 overflow-y-auto custom-scrollbar px-3">
           {navItems.map(item => {
             let isItemActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path);
-            if (item.path === '/shop' && location.pathname === '/payment') isItemActive = true;
 
             return (
               <button

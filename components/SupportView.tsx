@@ -7,7 +7,7 @@ import { supabase } from '../services/supabaseClient';
 export const SupportView: React.FC = () => {
   /* Added 'language' to destructuring from useLanguage to fix undefined variable errors */
   const { t, dir, language } = useLanguage();
-  const [discordLink, setDiscordLink] = useState<string>('#');
+  const [discordLink, setDiscordLink] = useState<string>('https://discord.gg/jNn6Rkf2uc');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {

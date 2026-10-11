@@ -164,7 +164,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ item, onRetranslate }) =
             <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm flex items-center justify-between">
               {item.error === 'ERR_NO_BALANCE' ? (
                 <span>
-                  {t('insufficientBalance')} <Link to="/shop" className="underline font-bold hover:text-red-800 dark:hover:text-red-200">{t('visitStore')}</Link>
+                  {t('insufficientBalance')} <Link to="/earn" className="underline font-bold hover:text-red-800 dark:hover:text-red-200">{t('visitStore')}</Link>
                 </span>
               ) : (
                 <span>{item.error || t('unknownError')}</span>

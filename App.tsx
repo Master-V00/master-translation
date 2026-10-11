@@ -6,17 +6,16 @@ import { useLanguage } from './components/LanguageContext';
 import { Sidebar } from './components/Sidebar';
 import { HomeView } from './components/HomeView';
 import { ProfileView } from './components/ProfileView';
-import { StoreView } from './components/StoreView';
-import { PaymentView } from './components/PaymentView';
 import { AdminView } from './components/AdminView';
 import { SupportView } from './components/SupportView';
 import { FreeCoinsView } from './components/FreeCoinsView';
 import { EarnCoinsView } from './components/EarnCoinsView';
 import { HistoryView } from './components/HistoryView';
-import { StoreProduct } from './types';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { supabase } from './services/supabaseClient';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { getUserApiKey } from './services/geminiService';
+import { ApiKeyPrompt } from './components/ApiKeyPrompt';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import EditorApp from './components/EditorApp'; // ملف App بتاع المشروع الفرعي
 import { CoverDesignView } from './components/CoverDesignView';
 import { MangaReaderView } from './components/MangaReaderView';
@@ -30,6 +29,9 @@ const AppContent: React.FC = () => {
   // States for Global Message
   const [globalMessage, setGlobalMessage] = useState<{ title: string; main_message: string } | null>(null);
   const [showGlobalPopup, setShowGlobalPopup] = useState(false);
+
+  // Personal API key prompt (BYOK): shown once on startup when no key is saved
+  const [showKeyPrompt, setShowKeyPrompt] = useState<boolean>(() => !getUserApiKey());
 
   // Initialize sidebar based on screen width
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
@@ -100,8 +102,6 @@ const AppContent: React.FC = () => {
             <Routes>
               <Route path="/" element={<HomeView />} />
               <Route path="/profile" element={<ProfileWrapper />} />
-              <Route path="/shop" element={<StoreWrapper />} />
-              <Route path="/payment" element={<PaymentWrapper />} />
               <Route path="/admin" element={<AdminView />} />
               <Route path="/merger" element={<EditorApp />} />
               <Route path="/cover-design" element={<CoverDesignView />} />
@@ -117,6 +117,9 @@ const AppContent: React.FC = () => {
           </main>
         </div>
       </div>
+
+      {/* Personal API key prompt */}
+      {showKeyPrompt && <ApiKeyPrompt onDone={() => setShowKeyPrompt(false)} />}
 
       {/* Global Message Modal */}
       {showGlobalPopup && globalMessage && (
@@ -162,40 +165,9 @@ const AppContent: React.FC = () => {
 const ProfileWrapper = () => {
   const navigate = useNavigate();
   return (
-    <ProfileView 
-      onUpgrade={() => navigate('/shop')}
-      onBuyCredits={() => navigate('/shop', { state: { scrollToPacks: true } })}
-    />
-  );
-};
-
-const StoreWrapper = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const state = location.state as { scrollToPacks?: boolean } | null;
-  
-  return (
-    <StoreView 
-      onSubscribe={(plan) => navigate('/payment', { state: { plan } })} 
-      scrollToPacks={state?.scrollToPacks} 
-    />
-  );
-};
-
-const PaymentWrapper = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const state = location.state as { plan: StoreProduct } | null;
-
-  if (!state?.plan) {
-    return <Navigate to="/shop" replace />;
-  }
-
-  return (
-    <PaymentView 
-      plan={state.plan} 
-      onBack={() => navigate('/shop')} 
-      onConfirm={() => navigate('/')} 
+    <ProfileView
+      onUpgrade={() => navigate('/earn')}
+      onBuyCredits={() => navigate('/earn')}
     />
   );
 };

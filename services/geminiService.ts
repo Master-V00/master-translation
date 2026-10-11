@@ -8,6 +8,27 @@ const cleanApiKey = (key: string) => {
   return key.trim().replace(/[\n\r]/g, '');
 };
 
+// === مفتاح المستخدم الشخصي (BYOK) ===
+// يُحفظ في localStorage من نافذة الترحيب ويُستخدم مباشرة بدون المرور بجدول Supabase
+export const USER_KEY_STORAGE = 'user_gemini_api_key';
+
+export const getUserApiKey = (): string | null => {
+  try {
+    const k = localStorage.getItem(USER_KEY_STORAGE);
+    return k && k.trim() ? cleanApiKey(k) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setUserApiKey = (key: string) => {
+  try {
+    localStorage.setItem(USER_KEY_STORAGE, cleanApiKey(key));
+  } catch {
+    // storage unavailable: ignore
+  }
+};
+
 const cleanupResultText = (s: string) => {
   if (!s || typeof s !== 'string') return '';
   // إزالة أسوار Markdown والكلمات الزائدة
@@ -154,6 +175,38 @@ export const translateMangaPage = async (
     - 'extracted': The raw text.
     - 'translated': The ${targetLanguage} translation.
     `;
+
+  // === مفتاح المستخدم أولاً (BYOK): محاولة مباشرة بدون Supabase ===
+  // لو المستخدم حط مفتاحه من نافذة الترحيب، نستخدمه على طول ونتجاوز نظام التدوير
+  const userKey = getUserApiKey();
+  if (userKey) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: userKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: {
+          role: "user",
+          parts: [
+            { inlineData: { data: base64Image, mimeType: mimeType } },
+            { text: `Extract and translate to ${targetLanguage}.` }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: translationSchema,
+          temperature: 0.3,
+          systemInstruction: systemPrompt,
+        },
+      });
+      const rawText = response.text;
+      if (!rawText) throw new Error("Empty response from AI");
+      const cleanedText = cleanupResultText(rawText);
+      const jsonString = extractJsonFromText(cleanedText);
+      return JSON.parse(jsonString);
+    } catch (e) {
+      console.warn("Personal key failed, falling back to shared rotation.", e);
+    }
+  }
 
   // === منطق إدارة المفاتيح (Locking & Rotation) ===
   const MAX_RETRIES = 20; // عدد محاولات البحث عن مفتاح

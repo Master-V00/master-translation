@@ -76,16 +76,6 @@ export interface LanguageContextType {
 
 export type ViewType = 'home' | 'profile' | 'store' | 'payment' | 'admin';
 
-export interface StoreProduct {
-  id: string;
-  type: 'subscription' | 'pack';
-  nameKey: string;
-  price: string;
-  durationKey?: string; // For subscriptions
-  credits?: number;     // For packs
-  features: string[];
-}
-
 export type SubscriptionTier = 'free' | 'pro' | 'pro-max' | 'master';
 
 export interface SymbolSet {
