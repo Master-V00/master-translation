@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="public/logo.png" alt="MASTER TRANSLATION logo" width="200" />
+
 # 🌐 MASTER TRANSLATION
 
 ### 📖 منصة ترجمة المانجا والمانهوا — Manga & Manhwa Translation Platform
